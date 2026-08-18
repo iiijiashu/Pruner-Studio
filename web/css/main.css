@@ -1,0 +1,22 @@
+/* ==========================================================================
+   Pruner Studio - Main CSS Entrypoint
+   Quiet Premium Visual System (DESIGN.md)
+   ========================================================================== */
+
+@import url("./base.css");
+@import url("./components.css");
+@import url("./deck.css");
+@import url("./catalog.css");
+@import url("./rules.css");
+@import url("./cloud.css");
+@import url("./player.css");
+
+/* Fade Animations */
+.animate-fade {
+  animation: fadeIn var(--transition-fast) ease forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

@@ -1,0 +1,258 @@
+/* ==========================================================================
+   Pruner Studio - Cloud Workspace (Synced Playlists, Grouped Actions, History)
+   ========================================================================== */
+
+.cloud-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+}
+
+/* Sections */
+.cloud-section-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.cloud-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: var(--space-2);
+}
+
+.cloud-section-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-bone);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Synced Playlists Grid */
+.playlist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-2);
+}
+
+.playlist-card-item {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  transition: border-color var(--transition-fast);
+}
+
+.playlist-card-item:hover {
+  border-color: var(--border-medium);
+}
+
+.playlist-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.playlist-name {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-bone);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.playlist-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Grouped Pending Actions */
+.batch-groups-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.batch-group-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+
+.batch-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background-color: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.batch-group-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-bone);
+}
+
+.batch-group-items-list {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.batch-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
+}
+
+.batch-item-row:last-child {
+  border-bottom: none;
+}
+
+.batch-song-title {
+  font-weight: 500;
+  color: var(--text-bone);
+}
+
+.batch-song-artist {
+  color: var(--text-ash);
+  font-size: 11px;
+}
+
+.batch-song-duration {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* Collapsible "More Tools" Accordion */
+.cloud-accordion-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  padding: 10px 14px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-bone);
+  cursor: pointer;
+  width: 100%;
+}
+
+.cloud-accordion-toggle:hover {
+  background-color: var(--bg-card);
+}
+
+.accordion-chevron {
+  transition: transform var(--transition-fast);
+}
+
+.cloud-accordion-toggle.expanded .accordion-chevron {
+  transform: rotate(90deg);
+}
+
+.cloud-accordion-panel {
+  display: none;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-1);
+}
+
+.cloud-accordion-panel.open {
+  display: flex;
+}
+
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-3);
+}
+
+.tool-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tool-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tool-card-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-bone);
+}
+
+.tool-card-desc {
+  font-size: var(--text-xs);
+  color: var(--text-ash);
+  line-height: 1.4;
+}
+
+/* Operations History Table */
+.ops-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+
+.ops-log-table th {
+  padding: 6px 10px;
+  color: var(--text-ash);
+  text-align: left;
+  background-color: var(--bg-card);
+  border-bottom: 1px solid var(--border-subtle);
+  font-weight: 600;
+}
+
+.ops-log-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-bone);
+}
+
+/* Batch Confirmation Modal Rows */
+.batch-confirm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-sm);
+  color: var(--text-bone);
+}

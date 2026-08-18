@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pruner Studio</title>
+  <meta name="description" content="在本机快速整理自己的网易云音乐歌单">
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+
+  <!-- Ambient Cover Field Signature Backdrop -->
+  <div id="ambient-cover-field" class="ambient-cover-field" aria-hidden="true"></div>
+
+  <!-- Application Header -->
+  <header class="app-header">
+    <div class="brand-section">
+      <span class="brand-title">Pruner Studio</span>
+      <span class="brand-badge">本机运行</span>
+    </div>
+
+    <!-- Navigation Tabs: Chinese-First (整理 / 曲库 / 云端) -->
+    <nav class="nav-tabs" role="tablist" aria-label="主导航">
+      <button class="nav-tab-btn active" data-tab="deck" role="tab" aria-selected="true" aria-controls="view-deck" id="tab-deck">
+        整理
+      </button>
+      <button class="nav-tab-btn" data-tab="catalog" role="tab" aria-selected="false" aria-controls="view-catalog" id="tab-catalog">
+        曲库
+      </button>
+      <button class="nav-tab-btn" data-tab="cloud" role="tab" aria-selected="false" aria-controls="view-cloud" id="tab-cloud">
+        云端
+      </button>
+    </nav>
+
+    <!-- Header Actions -->
+    <div class="header-actions">
+      <!-- Pending Actions Drawer Trigger -->
+      <button id="header-pending-btn" class="header-pending-btn" title="查看待执行的云端变更队列" aria-label="待执行队列">
+        <span>待执行</span>
+        <span id="header-pending-count" class="pending-count-badge">0</span>
+      </button>
+
+      <!-- User Account Status -->
+      <div id="user-status-container" class="header-user-status">
+        <button class="btn btn-primary btn-sm" id="header-login-btn">扫码登录</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 0. IMMERSIVE UNAUTHENTICATED LOGIN SHELL -->
+  <div id="unauthenticated-shell" class="unauthenticated-login-shell hidden">
+    <div class="login-shell-card">
+      <div class="login-shell-left">
+        <div class="login-brand-display">Pruner Studio</div>
+        <div class="login-statement">
+          让曲库只留下<br>你还会再听的歌。
+        </div>
+        <div class="login-tagline">private listening desk</div>
+      </div>
+
+      <div class="login-shell-right">
+        <div id="shell-qr-image-container" class="qr-code-box">
+          <div class="spinner"></div>
+        </div>
+        <p id="shell-qr-status-message" style="font-size: var(--text-xs); color: var(--text-ash);">
+          请使用网易云音乐手机 App 扫码确认
+        </p>
+        <button id="shell-qr-reload-btn" class="btn btn-secondary btn-sm">重新生成二维码</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AUTHENTICATED MAIN VIEWPORT -->
+  <main id="authenticated-main-viewport" class="main-viewport">
+
+    <!-- 1. REVIEW WORKSPACE (整理) -->
+    <section id="view-deck" class="view-panel active" role="tabpanel" aria-labelledby="tab-deck">
+      <div class="deck-view-wrapper">
+
+        <!-- Dense Top Controls Toolbar -->
+        <div class="deck-toolbar">
+          <div class="deck-toolbar-left">
+            <label for="deck-playlist-select" class="sr-only">选择歌单</label>
+            <select id="deck-playlist-select" class="deck-select-sm" aria-label="选择歌单">
+              <option value="">我喜欢的音乐</option>
+            </select>
+
+            <label for="deck-filter-select" class="sr-only">事实筛选</label>
+            <select id="deck-filter-select" class="deck-select-sm" aria-label="事实筛选">
+              <option value="undecided">筛选: 未决定</option>
+              <option value="skipped">筛选: 已跳过</option>
+              <option value="all">筛选: 全部歌曲</option>
+              <option value="rules">筛选: 命中规则</option>
+              <option value="vip">筛选: VIP歌曲</option>
+              <option value="unavailable">筛选: 无音源</option>
+              <option value="short">筛选: 短于90秒</option>
+              <option value="long">筛选: 长于5分钟</option>
+            </select>
+
+            <label for="deck-order-select" class="sr-only">排序顺序</label>
+            <select id="deck-order-select" class="deck-select-sm" aria-label="排序顺序">
+              <option value="recent">排序: 最新添加</option>
+              <option value="oldest">排序: 最早添加</option>
+              <option value="title">排序: 歌名 A-Z</option>
+              <option value="duration">排序: 时长由长到短</option>
+            </select>
+          </div>
+
+          <div class="deck-toolbar-right">
+            <button id="deck-reset-progress-btn" class="btn btn-ghost btn-sm" title="重置当前歌单与筛选条件的整理进度">重置进度</button>
+          </div>
+        </div>
+
+        <!-- Progress & Remaining Track Bar -->
+        <div class="deck-progress-bar-container">
+          <div class="deck-progress-info-row">
+            <span class="numeral-mono">进度 <strong id="deck-count-display">0 / 0</strong></span>
+            <span id="deck-remaining-display" class="numeral-mono">剩余 0 首</span>
+          </div>
+          <div class="deck-progress-track">
+            <div id="deck-progress-bar-fill" class="deck-progress-fill"></div>
+          </div>
+        </div>
+
+        <!-- 42% / 58% Review Workspace Layout Container -->
+        <div id="deck-workspace-container">
+          <!-- Populated by deck.js -->
+        </div>
+
+        <!-- Bottom Action Bar -->
+        <div class="deck-bottom-bar">
+          <button id="deck-mode-toggle" class="deck-mode-indicator" title="切换整理提交模式">模式: 立即同步 (3秒)</button>
+
+          <div class="deck-actions-group">
+            <button id="deck-dislike-btn" class="btn btn-prune" title="取消喜欢 / 移出歌单 [← / A]">
+              <span class="btn-label">取消喜欢</span>
+            </button>
+            <button id="deck-undo-btn" class="btn btn-secondary" title="撤销上一步操作 [Z]">撤销</button>
+            <button id="deck-skip-btn" class="btn btn-secondary" title="跳至本轮末尾 [Space]">跳至末尾</button>
+            <button id="deck-play-btn" class="btn btn-primary" title="播放 / 暂停 [P]">▶</button>
+            <button id="deck-chorus-jump-btn" class="btn btn-secondary" title="跳转副歌 [C / ↑]">副歌</button>
+            <button id="deck-like-btn" class="btn btn-keep" title="保留歌曲 [→ / D]">保留</button>
+          </div>
+        </div>
+
+        <!-- Keyboard Shortcuts Legend Bar -->
+        <div class="deck-shortcuts-legend">
+          <span><kbd class="kbd">←</kbd> 或 <kbd class="kbd">A</kbd> 移除</span>
+          <span><kbd class="kbd">→</kbd> 或 <kbd class="kbd">D</kbd> 保留</span>
+          <span><kbd class="kbd">Space</kbd> 跳至末尾</span>
+          <span><kbd class="kbd">P</kbd> 播放/暂停</span>
+          <span><kbd class="kbd">C</kbd> 或 <kbd class="kbd">↑</kbd> 副歌</span>
+          <span><kbd class="kbd">Z</kbd> 撤销</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. CATALOG WORKSPACE (曲库) -->
+    <section id="view-catalog" class="view-panel" role="tabpanel" aria-labelledby="tab-catalog">
+      <div id="catalog-view-panel" class="catalog-container">
+
+        <!-- Toolbar & Filter Chips -->
+        <div class="catalog-toolbar">
+          <div class="catalog-search-row">
+            <div class="search-input-wrapper">
+              <input type="text" id="catalog-search-input" class="input-text" placeholder="搜索歌曲标题、歌手、专辑..." aria-label="搜索曲库">
+              <button id="catalog-search-clear" class="search-clear-btn" aria-label="清空搜索">&times;</button>
+            </div>
+
+            <div class="catalog-toolbar-actions">
+              <label for="catalog-playlist-filter" class="sr-only">选择歌单</label>
+              <select id="catalog-playlist-filter" class="deck-select-sm" aria-label="按歌单筛选">
+                <option value="all">全部歌单</option>
+              </select>
+
+              <!-- View Switcher -->
+              <div class="view-switcher-group">
+                <button id="catalog-view-table-btn" class="view-switch-btn active" title="表格视图">表格</button>
+                <button id="catalog-view-cards-btn" class="view-switch-btn" title="卡片视图">卡片</button>
+              </div>
+
+              <!-- Open Rules Drawer Button -->
+              <button id="catalog-open-rules-btn" class="btn btn-secondary btn-sm" title="打开规则筛选">规则筛选</button>
+            </div>
+          </div>
+
+          <div class="catalog-filter-chips">
+            <button class="filter-chip active" data-filter="all">全部曲目</button>
+            <button class="filter-chip" data-filter="liked">我喜欢的音乐</button>
+            <button class="filter-chip" data-filter="unavailable">无音源</button>
+            <button class="filter-chip" data-filter="vip">VIP曲目</button>
+            <button class="filter-chip" data-filter="alternative">替代音源</button>
+            <button class="filter-chip" data-filter="rules">命中规则</button>
+          </div>
+        </div>
+
+        <!-- Bulk Selection Action Bar -->
+        <div id="catalog-selection-bar" class="catalog-selection-bar hidden">
+          <div class="selection-info">
+            <span id="catalog-selection-count">已选择 0 首歌曲</span>
+          </div>
+          <div class="selection-actions">
+            <button id="catalog-select-all-btn" class="btn btn-ghost btn-sm">全选筛选结果</button>
+            <button id="catalog-clear-select-btn" class="btn btn-ghost btn-sm">清空选择</button>
+            <button id="catalog-stage-prune-btn" class="btn btn-danger btn-sm">加入待处理队列</button>
+            <button id="catalog-create-playlist-btn" class="btn btn-primary btn-sm">基于选中创建歌单</button>
+          </div>
+        </div>
+
+        <!-- Table View Wrapper -->
+        <div id="catalog-table-wrapper" class="catalog-table-container">
+          <table class="catalog-table">
+            <thead>
+              <tr>
+                <th class="col-check"><input type="checkbox" id="catalog-select-all" class="checkbox-custom" aria-label="全选当前页"></th>
+                <th class="col-cover">封面</th>
+                <th class="col-title sortable" data-sort="title">歌曲标题</th>
+                <th class="col-artist sortable" data-sort="artist">歌手</th>
+                <th class="col-album sortable" data-sort="album">专辑</th>
+                <th class="col-duration sortable" data-sort="duration">时长</th>
+                <th class="col-status">状态</th>
+                <th class="col-actions">操作</th>
+              </tr>
+            </thead>
+            <tbody id="catalog-table-body">
+              <!-- Populated by catalog.js -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Cards View Wrapper (5 Columns Grid) -->
+        <div id="catalog-cards-wrapper" class="hidden">
+          <div id="catalog-cards-grid" class="catalog-cards-grid">
+            <!-- Populated by catalog.js -->
+          </div>
+        </div>
+
+        <!-- Pagination Bar -->
+        <div class="catalog-pagination">
+          <span id="catalog-pagination-info">显示 0 - 0 首 / 共 0 首</span>
+          <div class="pagination-controls">
+            <button id="catalog-page-prev" class="page-btn" disabled>上一页</button>
+            <span id="catalog-page-current" style="padding: 0 var(--space-2);">第 1 / 1 页</span>
+            <button id="catalog-page-next" class="page-btn" disabled>下一页</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- 3. CLOUD WORKSPACE (云端) -->
+    <section id="view-cloud" class="view-panel" role="tabpanel" aria-labelledby="tab-cloud">
+      <div id="cloud-view-panel" class="cloud-container">
+
+        <!-- Synced Playlists Card -->
+        <div class="cloud-section-card">
+          <div class="cloud-section-header">
+            <div class="cloud-section-title">已同步歌单</div>
+          </div>
+          <div id="cloud-playlists-grid" class="playlist-grid">
+            <!-- Populated by cloud.js -->
+          </div>
+        </div>
+
+        <!-- Grouped Pending Batch Actions -->
+        <div class="cloud-section-card">
+          <div class="cloud-section-header">
+            <div class="cloud-section-title">
+              <span>待执行变更</span>
+              <span id="cloud-batch-total-count" class="badge badge-danger">0 首待处理</span>
+            </div>
+            <button id="cloud-open-batch-confirm-btn" class="btn btn-danger btn-sm" disabled>确认执行云端变更</button>
+          </div>
+          <div id="cloud-batch-groups-container" class="batch-groups-list">
+            <!-- Populated by cloud.js -->
+          </div>
+        </div>
+
+        <!-- Collapsible "More Tools" Accordion -->
+        <div class="cloud-section-card" style="padding: 0; background: transparent; border: none;">
+          <button id="cloud-more-tools-toggle" class="cloud-accordion-toggle">
+            <span>更多工具 (本地备份 · 曲库导入 · 操作记录)</span>
+            <span class="accordion-chevron">›</span>
+          </button>
+          <div id="cloud-more-tools-panel" class="cloud-accordion-panel">
+            <div class="tools-grid">
+              <div class="tool-card">
+                <div class="tool-card-header">
+                  <div class="tool-card-title">本地备份</div>
+                  <button id="cloud-backup-btn" class="btn btn-secondary btn-sm">导出 JSON 快照</button>
+                </div>
+                <p class="tool-card-desc">
+                  导出完整的本地曲库与歌单快照，防止误操作。
+                </p>
+              </div>
+
+              <div class="tool-card">
+                <div class="tool-card-header">
+                  <div class="tool-card-title">导入曲库</div>
+                  <button id="cloud-open-import-btn" class="btn btn-secondary btn-sm">导入 JSON / CSV</button>
+                </div>
+                <p class="tool-card-desc">
+                  恢复或合并之前导出的歌单或 CSV 归档至本地缓存。
+                </p>
+              </div>
+            </div>
+
+            <!-- Operations History Table -->
+            <div class="cloud-section-card">
+              <div class="cloud-section-header">
+                <div class="cloud-section-title">操作记录 (最近100条)</div>
+              </div>
+              <table class="ops-log-table">
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>操作类型</th>
+                    <th>目标歌单</th>
+                    <th>成功 / 请求</th>
+                    <th>状态</th>
+                  </tr>
+                </thead>
+                <tbody id="cloud-ops-log-body">
+                  <!-- Populated by cloud.js -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- PENDING ACTIONS DRAWER (待执行抽屉) -->
+  <aside id="pending-actions-drawer" class="sliding-drawer" aria-label="待执行队列抽屉">
+    <div class="drawer-header">
+      <span class="drawer-title">待执行队列</span>
+      <button id="pending-drawer-close-btn" class="btn btn-ghost btn-icon" aria-label="关闭抽屉">&times;</button>
+    </div>
+    <div class="drawer-body">
+      <div>
+        <div class="drawer-section-title">即将提交 (3 秒倒计时)</div>
+        <div id="drawer-soft-commits-list" style="display: flex; flex-direction: column; gap: 6px;"></div>
+      </div>
+      <div>
+        <div class="drawer-section-title">稍后确认 (批量操作)</div>
+        <div id="drawer-batch-list" style="display: flex; flex-direction: column; gap: 6px;"></div>
+      </div>
+    </div>
+    <div class="drawer-footer">
+      <button id="drawer-batch-confirm-btn" class="btn btn-primary btn-sm" disabled>确认云端变更</button>
+    </div>
+  </aside>
+
+  <!-- RULES DRAWER INSIDE CATALOG (规则筛选抽屉) -->
+  <aside id="rules-drawer-panel" class="sliding-drawer" style="width: 440px;" aria-label="规则筛选抽屉">
+    <div class="drawer-header">
+      <span class="drawer-title">规则筛选</span>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <button id="rules-add-btn" class="btn btn-primary btn-sm">+ 新建规则</button>
+        <button id="rules-drawer-close-btn" class="btn btn-ghost btn-icon" aria-label="关闭规则抽屉">&times;</button>
+      </div>
+    </div>
+    <div class="drawer-body">
+      <div class="rules-sim-banner">
+        <div class="rules-sim-title">匹配预览</div>
+        <div id="rules-sim-summary" class="rules-sim-desc">正在计算当前规则对曲库的匹配结果...</div>
+      </div>
+      <div id="rules-list-container" class="rules-list"></div>
+    </div>
+  </aside>
+
+  <!-- COMPACT AUDIO PLAYER BAR (Only in Catalog Workspace) -->
+  <footer id="catalog-player-bar" class="audio-player-bar" role="region" aria-label="曲库播放器">
+    <div class="player-track-info">
+      <img id="player-track-cover" class="player-cover" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='42' height='42' fill='%23161713'><rect width='42' height='42'/></svg>" alt="封面">
+      <div class="player-meta">
+        <div id="player-track-title" class="player-title">未选择曲目</div>
+        <div class="player-artist-row">
+          <div id="player-track-artist" class="player-artist">就绪</div>
+          <span id="player-source-badge" class="sr-only"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="player-center-controls">
+      <div class="player-buttons-row">
+        <button id="player-chorus-btn" class="player-btn-chorus" title="副歌循环">副歌</button>
+        <button id="player-prev-btn" class="player-btn" title="快退 5 秒" aria-label="快退 5 秒">‹ 5s</button>
+        <button id="player-play-btn" class="player-btn player-btn-main" title="播放 / 暂停" aria-label="播放或暂停">▶</button>
+        <button id="player-next-btn" class="player-btn" title="快进 5 秒" aria-label="快进 5 秒">5s ›</button>
+      </div>
+
+      <div class="player-timeline-row">
+        <span id="player-time-current" class="player-time time-current">0:00</span>
+        <div class="timeline-slider-container">
+          <div class="timeline-track">
+            <div id="player-timeline-progress" class="timeline-progress"></div>
+          </div>
+          <input type="range" id="player-timeline-slider" class="timeline-slider" min="0" max="100" value="0" step="0.1" aria-label="跳转进度">
+        </div>
+        <span id="player-time-total" class="player-time time-total">0:00</span>
+      </div>
+    </div>
+
+    <div class="player-right-controls">
+      <div class="volume-control-group">
+        <span style="font-size: 11px; color: var(--text-muted);" aria-hidden="true">音量</span>
+        <input type="range" id="player-volume-slider" class="volume-slider" min="0" max="100" value="80" aria-label="调节音量">
+      </div>
+      <button id="player-lyrics-toggle-btn" class="btn btn-ghost btn-sm" title="切换同步歌词抽屉">歌词</button>
+    </div>
+  </footer>
+
+  <!-- STANDALONE LYRICS DRAWER -->
+  <aside id="lyrics-drawer-panel" class="lyrics-drawer-panel" aria-label="歌词面板">
+    <div class="drawer-header">
+      <span class="drawer-title">同步歌词</span>
+      <button id="lyrics-drawer-close-btn" class="btn btn-ghost btn-icon" aria-label="关闭歌词">&times;</button>
+    </div>
+    <div id="lyrics-drawer-scroller" class="lyrics-drawer-scroller"></div>
+  </aside>
+
+  <!-- MODAL: QR Code Login -->
+  <div id="login-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="login-modal-title" class="modal-title">网易云音乐账号登录</h3>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">&times;</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-3);">
+        <div id="qr-image-container" class="qr-code-box">
+          <div class="spinner"></div>
+        </div>
+        <p id="qr-status-message" style="font-size: var(--text-xs); color: var(--text-ash);">
+          请使用网易云音乐手机 App 扫码登录
+        </p>
+        <button id="qr-reload-btn" class="btn btn-secondary btn-sm">重新生成二维码</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Rule Editor -->
+  <div id="rule-editor-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="rule-editor-title">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="rule-editor-title" class="modal-title">规则编辑器</h3>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="rule-form-group">
+          <label class="form-label" for="rule-edit-name">规则名称</label>
+          <input type="text" id="rule-edit-name" class="input-text" placeholder="例如：短片与前奏剪辑 (< 60秒)">
+        </div>
+
+        <div class="rule-form-group">
+          <label class="form-label">匹配条件 (全部条件须同时满足)</label>
+          <div id="rule-edit-clauses-container" class="clauses-builder-container"></div>
+        </div>
+
+        <div class="rule-form-group">
+          <label class="form-label" for="rule-edit-output">输出歌单名称 (可选)</label>
+          <input type="text" id="rule-edit-output" class="input-text" placeholder="例如：待归档短曲">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost btn-sm" data-modal-close>取消</button>
+        <button id="rule-editor-save-btn" class="btn btn-primary btn-sm">保存规则</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Rule Preview -->
+  <div id="rule-preview-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="rule-preview-title">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="rule-preview-title" class="modal-title">命中歌曲列表</h3>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">&times;</button>
+      </div>
+      <div class="modal-body" id="rule-preview-songs-list" style="max-height: 380px; overflow-y: auto;"></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" data-modal-close>关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Track Details (Card click) -->
+  <div id="track-details-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="track-modal-title">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">歌曲详情</h3>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">&times;</button>
+      </div>
+      <div class="modal-body" style="display: flex; gap: var(--space-4);">
+        <img id="track-modal-cover" style="width: 110px; height: 110px; border-radius: var(--radius-control); object-fit: cover; background: var(--bg-night);" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='110' height='110' fill='%23161713'><rect width='110' height='110'/></svg>" alt="封面">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+          <h4 id="track-modal-title" style="font-size: var(--text-base); font-weight: 700; color: var(--text-bone);"></h4>
+          <div id="track-modal-artist" style="font-size: var(--text-sm); color: var(--text-ash);"></div>
+          <div id="track-modal-album" style="font-size: var(--text-xs); color: var(--text-muted);"></div>
+          <div style="font-size: var(--text-xs); color: var(--text-ash); margin-top: 4px;">
+            时长: <span id="track-modal-duration" class="numeral-mono"></span> · 歌单: <span id="track-modal-source"></span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="track-modal-stage-btn" class="btn btn-danger btn-sm">加入待处理</button>
+        <button id="track-modal-play-btn" class="btn btn-primary btn-sm">播放此曲</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Create Playlist -->
+  <div id="create-playlist-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="create-pl-title">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="create-pl-title" class="modal-title">创建云端新歌单</h3>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: var(--text-xs); color: var(--text-ash); margin-bottom: var(--space-3);">
+          将为选中的 <strong id="create-playlist-song-count">0</strong> 首歌曲创建新的网易云歌单。
+        </p>
+        <div class="rule-form-group">
+          <label class="form-label" for="create-playlist-name-input">歌单标题</label>
+          <input type="text" id="create-playlist-name-input" class="input-text" placeholder="例如：整理精选 2026">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost btn-sm" data-modal-close>取消</button>
+        <button id="create-playlist-submit-btn" class="btn btn-primary btn-sm">在网易云创建</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Grouped Batch Confirmation (确认云端变更) -->
+  <div id="batch-confirm-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="batch-confirm-title">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="batch-confirm-title" class="modal-title">确认云端变更</h3>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="batch-confirm-summary-list" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--space-4);"></div>
+        <p style="font-size: var(--text-xs); color: var(--text-muted); line-height: 1.4;">
+          · 自动快照将在执行前创建，可在“云端 - 更多工具”中查看备份。<br>
+          · 执行后将调用网易云音乐接口实际处理对应曲目。
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost btn-sm" data-modal-close>取消</button>
+        <button id="batch-confirm-execute-btn" class="btn btn-danger btn-sm">确认执行</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Import Catalog -->
+  <div id="import-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="import-modal-title" class="modal-title">导入本地曲库文件</h3>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="import-dropzone" class="import-dropzone" role="button" tabindex="0" aria-label="选择 JSON 或 CSV 曲库导出文件">
+          <div style="font-weight: 600; color: var(--text-bone);">拖拽 .json 或 .csv 文件至此处</div>
+          <div style="font-size: var(--text-xs); color: var(--text-ash);">或点击选择本地文件</div>
+          <input type="file" id="import-file-input" accept=".json,.csv" style="display: none;">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- Main JavaScript Application Bootstrap -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

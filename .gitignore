@@ -1,0 +1,32 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+build/
+dist/
+*.spec
+
+# Local runtime state and credentials
+.auth_session.json
+auth_session.json
+session.json
+catalog.json
+operations.json
+rules.local.json
+rules.json
+backup-*.json
+*.local.json
+my_liked_songs_full.json
+songs_data.js
+cloud_unliked_audit.json
+
+# Editors and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+.agy-tasks/
+.runtime-acceptance/
+.runtime-visual-acceptance/

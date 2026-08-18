@@ -1,0 +1,285 @@
+/* ==========================================================================
+   Pruner Studio - Compact Catalog Audio Player & Lyrics Drawer
+   ========================================================================== */
+
+/* Docked Bottom Audio Player - Active only in Catalog Workspace */
+.audio-player-bar {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--player-height);
+  background-color: var(--bg-surface);
+  border-top: 1px solid var(--border-subtle);
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-6);
+  z-index: var(--z-player);
+  box-shadow: var(--shadow-md);
+}
+
+.audio-player-bar.active {
+  display: flex;
+}
+
+/* Left: Track Details */
+.player-track-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 240px;
+  min-width: 0;
+}
+
+.player-cover {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-control);
+  object-fit: cover;
+  background-color: var(--bg-card);
+  flex-shrink: 0;
+  border: 1px solid var(--border-subtle);
+}
+
+.player-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.player-title {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-bone);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-artist-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.player-artist {
+  font-size: 11px;
+  color: var(--text-ash);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Center: Controls & Timeline */
+.player-center-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  max-width: 560px;
+}
+
+.player-buttons-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.player-btn {
+  color: var(--text-ash);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all var(--transition-fast);
+}
+
+.player-btn:hover {
+  color: var(--text-bone);
+  background-color: var(--bg-card);
+}
+
+.player-btn-main {
+  width: 32px;
+  height: 32px;
+  background-color: var(--text-bone);
+  color: var(--bg-night);
+  border-radius: var(--radius-control);
+  font-weight: 700;
+}
+
+.player-btn-main:hover {
+  background-color: #ffffff;
+  color: var(--bg-night);
+}
+
+.player-btn-chorus {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-bone);
+  background-color: var(--bg-card);
+  cursor: pointer;
+}
+
+.player-btn-chorus:hover {
+  background-color: var(--bg-elevated);
+}
+
+.player-btn-chorus.active {
+  background-color: var(--cover-accent);
+  color: var(--bg-night);
+  border-color: var(--cover-accent);
+}
+
+/* Timeline Scrubber */
+.player-timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.player-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 32px;
+}
+
+.time-current { text-align: right; }
+.time-total { text-align: left; }
+
+.timeline-slider-container {
+  position: relative;
+  flex: 1;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.timeline-track {
+  width: 100%;
+  height: 3px;
+  background-color: var(--bg-card);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+}
+
+.timeline-progress {
+  height: 100%;
+  width: 0%;
+  background-color: var(--cover-accent);
+}
+
+.timeline-slider {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  margin: 0;
+}
+
+/* Right: Volume & Drawer Toggle */
+.player-right-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  width: 240px;
+}
+
+.volume-control-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.volume-slider {
+  width: 70px;
+  height: 3px;
+  appearance: none;
+  background: var(--bg-card);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-bone);
+  cursor: pointer;
+}
+
+/* Standalone Lyrics Drawer (Triggered in Catalog Player) */
+.lyrics-drawer-panel {
+  position: fixed;
+  top: var(--header-height);
+  right: 0;
+  bottom: var(--player-height);
+  width: 360px;
+  background-color: var(--bg-surface);
+  border-left: 1px solid var(--border-medium);
+  box-shadow: var(--shadow-drawer);
+  z-index: var(--z-drawer);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform var(--transition-deck);
+}
+
+.lyrics-drawer-panel.open {
+  transform: translateX(0);
+}
+
+.lyrics-drawer-scroller {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.lyric-line {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--radius-control);
+  transition: color var(--transition-fast);
+}
+
+.lyric-line:hover {
+  color: var(--text-ash);
+  background-color: var(--bg-card);
+}
+
+.lyric-line.active {
+  color: var(--text-bone);
+  font-weight: 700;
+  background-color: var(--bg-card);
+  border-left: 2px solid var(--cover-accent);
+}
+
+.lyric-line-translation {
+  font-size: 11px;
+  color: var(--text-ash);
+  margin-top: 2px;
+  font-weight: 400;
+}

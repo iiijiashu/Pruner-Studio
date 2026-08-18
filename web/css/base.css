@@ -1,0 +1,226 @@
+/* ==========================================================================
+   Pruner Studio - Base Design System & Quiet Premium Reset
+   ========================================================================== */
+
+@font-face {
+  font-family: "Marcellus";
+  src: url("../assets/fonts/Marcellus-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  /* Exact Design Tokens from DESIGN.md */
+  --bg-night: #0c0d0b;
+  --bg-carbon: #161713;
+  --text-bone: #f1efe7;
+  --text-ash: #96938a;
+  --color-keep: #789c7c;
+  --color-prune: #ce6f64;
+
+  /* Aliased Surface & Text Tokens */
+  --bg-app: var(--bg-night);
+  --bg-primary: var(--bg-night);
+  --bg-surface: var(--bg-carbon);
+  --bg-card: #191b16;
+  --bg-elevated: #1e201b;
+  --bg-hover: #262922;
+  --bg-active: #2f332a;
+
+  --text-primary: var(--text-bone);
+  --text-secondary: var(--text-ash);
+  --text-muted: #737068;
+  --text-disabled: #4e4c46;
+
+  /* Hairlines: Bone at 10-16% opacity */
+  --border-subtle: rgba(241, 239, 231, 0.12);
+  --border-medium: rgba(241, 239, 231, 0.16);
+  --border-strong: rgba(241, 239, 231, 0.24);
+
+  /* Semantic State Colors */
+  --semantic-keep: var(--color-keep);
+  --semantic-keep-hover: #8baea0;
+  --semantic-keep-subtle: rgba(120, 156, 124, 0.15);
+
+  --semantic-prune: var(--color-prune);
+  --semantic-prune-hover: #de8075;
+  --semantic-prune-subtle: rgba(206, 111, 100, 0.15);
+
+  --accent-warning: #c29557;
+  --accent-warning-subtle: rgba(194, 149, 87, 0.15);
+  --accent-alt: #9f8fb5;
+  --accent-alt-subtle: rgba(159, 143, 181, 0.15);
+
+  /* Cover-led non-semantic accent */
+  --cover-accent: #8a9a86;
+  --cover-accent-subtle: rgba(138, 154, 134, 0.16);
+
+  /* Typography */
+  --font-sans: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-brand: "Marcellus", Georgia, "Times New Roman", serif;
+  --font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+
+  --text-xs: 0.75rem;    /* 12px */
+  --text-sm: 0.875rem;   /* 14px */
+  --text-base: 1rem;     /* 16px */
+  --text-lg: 1.125rem;   /* 18px */
+  --text-xl: 1.25rem;    /* 20px */
+  --text-2xl: 1.5rem;    /* 24px */
+  --text-3xl: 2rem;      /* 32px */
+
+  /* Spacing scale: 4, 8, 12, 16, 24, 32, 48px */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* Geometry: 6px controls, 10px surfaces */
+  --radius-control: 6px;
+  --radius-surface: 10px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.65);
+  --shadow-drawer: -10px 0 35px rgba(0, 0, 0, 0.75);
+
+  /* Motion: Fast 120ms, Standard 180ms, Decision 260ms */
+  --transition-fast: 120ms ease;
+  --transition-normal: 180ms ease;
+  --transition-deck: 260ms ease;
+
+  /* Layout */
+  --header-height: 58px;
+  --player-height: 72px;
+  --max-content-width: 1280px;
+
+  --z-cover-field: -1;
+  --z-base: 1;
+  --z-header: 100;
+  --z-player: 200;
+  --z-drawer: 300;
+  --z-modal-backdrop: 500;
+  --z-modal: 510;
+  --z-toast: 1000;
+}
+
+/* Box Sizing & Reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text-bone);
+  background-color: var(--bg-night);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  height: 100%;
+}
+
+body {
+  min-height: 100%;
+  background-color: var(--bg-night);
+  color: var(--text-bone);
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* Monospace numerals with tabular numbers */
+.numeral-mono, .col-duration, .player-time, .deck-progress-info, .countdown-pill {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Brand display typeface */
+.brand-title, .login-brand-display, .display-numeral {
+  font-family: var(--font-brand);
+  letter-spacing: 0.04em;
+}
+
+/* Ambient Cover Field Backdrop Signature */
+.ambient-cover-field {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: blur(80px);
+  opacity: 0.12;
+  pointer-events: none;
+  z-index: var(--z-cover-field);
+  transition: background-image var(--transition-deck);
+  will-change: background-image;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-night);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-elevated);
+  border-radius: var(--radius-control);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--bg-hover);
+}
+
+/* Focus Visible */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--cover-accent) !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 2px var(--bg-night), 0 0 0 4px var(--cover-accent);
+}
+
+/* Prefers Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transform: none !important;
+  }
+}
+
+/* Utility classes */
+.hidden {
+  display: none !important;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
