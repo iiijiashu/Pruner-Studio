@@ -11,52 +11,52 @@
 }
 
 :root {
-  /* Exact Design Tokens from DESIGN.md */
-  --bg-night: #0c0d0b;
-  --bg-carbon: #161713;
-  --text-bone: #f1efe7;
-  --text-ash: #96938a;
-  --color-keep: #789c7c;
-  --color-prune: #ce6f64;
+  /* Clean Neutral Charcoal Dark Tokens (Zero greenish tint) */
+  --bg-night: #121214;
+  --bg-carbon: #1c1c1f;
+  --text-bone: #f5f5f7;
+  --text-ash: #a1a1a6;
+  --color-keep: #62a368;
+  --color-prune: #df584c;
 
   /* Aliased Surface & Text Tokens */
   --bg-app: var(--bg-night);
   --bg-primary: var(--bg-night);
   --bg-surface: var(--bg-carbon);
-  --bg-card: #191b16;
-  --bg-elevated: #1e201b;
-  --bg-hover: #262922;
-  --bg-active: #2f332a;
+  --bg-card: #232328;
+  --bg-elevated: #2c2c32;
+  --bg-hover: #36363d;
+  --bg-active: #40404a;
 
   --text-primary: var(--text-bone);
   --text-secondary: var(--text-ash);
-  --text-muted: #737068;
-  --text-disabled: #4e4c46;
+  --text-muted: #6e6e73;
+  --text-disabled: #48484a;
 
-  /* Hairlines: Bone at 10-16% opacity */
-  --border-subtle: rgba(241, 239, 231, 0.12);
-  --border-medium: rgba(241, 239, 231, 0.16);
-  --border-strong: rgba(241, 239, 231, 0.24);
+  /* Hairlines: Clean neutral white with precise opacity */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-medium: rgba(255, 255, 255, 0.14);
+  --border-strong: rgba(255, 255, 255, 0.24);
 
   /* Semantic State Colors */
   --semantic-keep: var(--color-keep);
-  --semantic-keep-hover: #8baea0;
-  --semantic-keep-subtle: rgba(120, 156, 124, 0.15);
+  --semantic-keep-hover: #72b579;
+  --semantic-keep-subtle: rgba(98, 163, 104, 0.16);
 
   --semantic-prune: var(--color-prune);
-  --semantic-prune-hover: #de8075;
-  --semantic-prune-subtle: rgba(206, 111, 100, 0.15);
+  --semantic-prune-hover: #eb6a5f;
+  --semantic-prune-subtle: rgba(223, 88, 76, 0.16);
 
-  --accent-warning: #c29557;
-  --accent-warning-subtle: rgba(194, 149, 87, 0.15);
-  --accent-alt: #9f8fb5;
-  --accent-alt-subtle: rgba(159, 143, 181, 0.15);
+  --accent-warning: #d69e4e;
+  --accent-warning-subtle: rgba(214, 158, 78, 0.16);
+  --accent-alt: #a896c2;
+  --accent-alt-subtle: rgba(168, 150, 194, 0.16);
 
   /* Cover-led non-semantic accent */
-  --cover-accent: #8a9a86;
-  --cover-accent-subtle: rgba(138, 154, 134, 0.16);
+  --cover-accent: #7ca384;
+  --cover-accent-subtle: rgba(124, 163, 132, 0.18);
 
-  /* Typography */
+  /* Typography: Precision Proportions */
   --font-sans: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-brand: "Marcellus", Georgia, "Times New Roman", serif;
   --font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
@@ -84,10 +84,10 @@
   --radius-full: 9999px;
 
   /* Shadows */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.65);
-  --shadow-drawer: -10px 0 35px rgba(0, 0, 0, 0.75);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --shadow-drawer: -10px 0 35px rgba(0, 0, 0, 0.6);
 
   /* Motion: Fast 120ms, Standard 180ms, Decision 260ms */
   --transition-fast: 120ms ease;
@@ -150,7 +150,7 @@ body {
   letter-spacing: 0.04em;
 }
 
-/* Ambient Cover Field Backdrop Signature */
+/* Ambient Cover Field Backdrop Signature (Soft and natural) */
 .ambient-cover-field {
   position: fixed;
   top: 0;
@@ -160,8 +160,8 @@ body {
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  filter: blur(80px);
-  opacity: 0.12;
+  filter: blur(100px);
+  opacity: 0.16;
   pointer-events: none;
   z-index: var(--z-cover-field);
   transition: background-image var(--transition-deck);
@@ -205,6 +205,7 @@ textarea:focus-visible,
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     transform: none !important;
+    scroll-behavior: auto !important;
   }
 }
 

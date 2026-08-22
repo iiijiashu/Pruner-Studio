@@ -10,14 +10,14 @@ The interface is a tool, not a portfolio page. “Simple premium” means precis
 
 ### Palette
 
-- Night `#0c0d0b`: application background.
-- Carbon `#161713`: primary working surface.
-- Bone `#f1efe7`: primary text and high-contrast controls.
-- Ash `#96938a`: secondary text.
-- Keep `#789c7c`: fixed semantic keep state.
-- Prune `#ce6f64`: fixed semantic destructive state.
+- Night `#121214`: application background.
+- Carbon `#1c1c1f`: primary working surface.
+- Bone `#f5f5f7`: primary text and high-contrast controls.
+- Ash `#a1a1a6`: secondary text.
+- Keep `#62a368`: fixed semantic keep state.
+- Prune `#df584c`: fixed semantic destructive state.
 
-Hairlines use Bone at 10–16% opacity. Elevated surfaces may mix Carbon toward Bone by no more than 5%.
+Hairlines use neutral white at 8–24% opacity (`rgba(255,255,255, .08/.14/.24)`). Surface steps above Carbon: card `#232328`, elevated `#2c2c32`, hover `#36363d`, active `#40404a`. Muted text `#6e6e73`.
 
 The current cover supplies one non-semantic accent. Normalize it to readable saturation and lightness, expose it through `--cover-accent`, and use it only for playback/progress/focus and the ambient cover field. It must never replace Keep or Prune.
 
@@ -65,19 +65,19 @@ The signature is the **cover field**: a low-opacity, heavily softened continuati
 ├ playlist | factual filter | order | reset ─────────────────┤
 ├ progress 128/500 ─────────── remaining 372 · about 18 min ┤
 │                                                             │
-│  ┌────────────────── 42% ┐  ┌────────────────────── 58% ┐   │
-│  │                      │  │ TITLE                     │   │
-│  │     ALBUM COVER      │  │ artist / album / timing  │   │
-│  │                      │  │ source / availability    │   │
-│  │                      │  │                           │   │
-│  └──────────────────────┘  │ previous lyric           │   │
-│                            │ CURRENT LYRIC             │   │
-│                            │ translated lyric          │   │
-│                            │ next lyric                │   │
-│                            └───────────────────────────┘   │
-├ mode: 立即同步(3秒) ─ prune · undo · skip · play · keep ──┤
+│  ┌─ fixed left ───┐  ┌─ flexible right pane ────────────┐  │
+│  │ 320–380px      │  │ TITLE                           │  │
+│  │                │  │ artist / album / timing         │  │
+│  │  ALBUM COVER   │  │ source / availability           │  │
+│  │                │  │ ┌─────────────────────────────┐ │  │
+│  │                │  │ │ continuous rolling lyrics   │ │  │
+│  │                │  │ │ (edge-faded, active centered)│ │  │
+│  └────────────────┘  └────────────────────────────────┘  │
+├ mode: 立即同步(3秒) ── centered: prune·undo·skip·play·chorus·keep ─┤
 └─────────────────────────────────────────────────────────────┘
 ```
+
+The left cover column is a fixed 320–380px; the right pane takes the remaining width. The lyrics box is a fixed-height rolling list with top/bottom fade masks; the active line is enlarged, cover-accent marked, and kept centered by smooth scroll (disabled under reduced motion). The bottom bar centers the six action buttons with the mode toggle at the far left.
 
 ### Catalog
 
@@ -123,8 +123,8 @@ The signature is the **cover field**: a low-opacity, heavily softened continuati
 ## Interaction contract
 
 - New accounts resolve the real `kind=liked` playlist ID, sync it, order recent-first, and enter the first song. Never use a synthetic `liked` ID.
-- Review controls stay visible. Factual filters include undecided, skipped, rule matched, VIP, unavailable, and duration ranges.
-- `←` destructive, `→` keep, `Space` skip-to-end, `P` play/pause, `C` or `↑` chorus, `Z` undo newest uncommitted action.
+- Review controls stay visible. Factual filters include undecided, relisten-later, skipped, rule matched, VIP, unavailable, and duration ranges.
+- `←` destructive, `→` keep, `Space` skip-to-end, `P` play/pause, `C` or `↑` chorus, `Z` undo newest uncommitted action, `L` mark as 稍后再听 (relisten later — an explicit undecided middle state that persists with review progress).
 - Single destructive actions default to visible instant mode. The UI advances immediately, holds the remote write for three seconds, and shows a cancellable countdown. Closing the application cancels soft commits; internal navigation does not.
 - Drag gestures default off. The first destructive action shows one concise explanation, once.
 - In liked music, destructive means unlike. In an owned playlist, it means remove from that playlist. The label must change with context.

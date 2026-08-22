@@ -9,6 +9,7 @@ import { player } from './player.js';
 import { toast } from './toast.js';
 import { modal } from './modal.js';
 import { RuleEngine } from './rules.js';
+import { lyricsManager } from './lyrics.js';
 import {
   createElement,
   formatDuration,
@@ -274,6 +275,12 @@ class DeckReviewEngine {
     // Render 42% / 58% Review Workspace Layout
     const workspaceEl = this.createReviewWorkspaceLayout(currentSong);
     this.container.appendChild(workspaceEl);
+
+    // Sync lyrics into the fresh DOM container
+    lyricsManager.renderDeckLyrics();
+    if (player && player.audio && !player.audio.paused) {
+      lyricsManager.updateTime(player.audio.currentTime);
+    }
 
     // Update Action Button Labels (e.g. 取消喜欢 vs 移出歌单)
     this.updateDestructiveButtonLabel();

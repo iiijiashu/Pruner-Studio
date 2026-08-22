@@ -50,8 +50,27 @@ function scanDir(dir) {
 console.log('Scanning web/** for emojis and obsolete English nav labels...');
 scanDir('web');
 
+// Structural contract check: the deck bottom bar must keep the instant/batch
+// commit mode toggle reachable (DESIGN.md review workspace layout).
+const indexHtml = fs.readFileSync(path.join('web', 'index.html'), 'utf8');
+const requiredDeckControls = [
+  'deck-mode-toggle',
+  'deck-dislike-btn',
+  'deck-undo-btn',
+  'deck-skip-btn',
+  'deck-play-btn',
+  'deck-chorus-jump-btn',
+  'deck-like-btn',
+];
+for (const controlId of requiredDeckControls) {
+  if (!indexHtml.includes(`id="${controlId}"`)) {
+    console.error(`[MISSING_CONTROL] #${controlId} must exist in web/index.html (deck action bar contract)`);
+    errors++;
+  }
+}
+
 if (errors === 0) {
-  console.log('✓ UI Scan Passed: Zero emojis and zero forbidden English nav labels found in web/**.');
+  console.log('✓ UI Scan Passed: Zero emojis, zero forbidden English nav labels, and all required deck controls found in web/**.');
   process.exit(0);
 } else {
   console.error(`❌ UI Scan Failed: Found ${errors} violation(s).`);

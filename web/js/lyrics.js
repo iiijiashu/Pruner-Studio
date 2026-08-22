@@ -4,6 +4,19 @@
  */
 import { createElement } from './utils.js';
 
+/**
+ * Chooses scroll behavior honoring prefers-reduced-motion.
+ * @returns {'smooth'|'auto'}
+ */
+function preferredScrollBehavior() {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 'smooth';
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  } catch {
+    return 'smooth';
+  }
+}
+
 export class LyricsEngine {
   /**
    * Parse LRC format string into array of timestamped lines with optional translations.
@@ -101,23 +114,26 @@ class LyricsViewManager {
     this.lyricsData = [];
     this.currentActiveIndex = -1;
     this.container = null;
-    this.deckContainer = null;
     this.onSeekCallback = null;
   }
 
   init(containerId, onSeek) {
     if (typeof document !== 'undefined') {
       this.container = document.getElementById(containerId);
-      this.deckContainer = document.getElementById('deck-lyrics-container');
     }
     this.onSeekCallback = onSeek;
+  }
+
+  getDeckContainer() {
+    if (typeof document === 'undefined') return null;
+    return document.getElementById('deck-lyrics-container');
   }
 
   loadLyrics(lrcString, tlyricsString = '') {
     this.lyricsData = LyricsEngine.parseLrc(lrcString, tlyricsString);
     this.currentActiveIndex = -1;
     this.render();
-    this.renderDeckLyrics(-1);
+    this.renderDeckLyrics();
   }
 
   render() {
@@ -158,6 +174,7 @@ class LyricsViewManager {
           keydown: (event) => {
             if ((event.key === 'Enter' || event.key === ' ') && this.onSeekCallback) {
               event.preventDefault();
+              event.stopPropagation();
               this.onSeekCallback(item.time);
             }
           }
@@ -169,8 +186,8 @@ class LyricsViewManager {
     });
   }
 
-  renderDeckLyrics(activeIndex) {
-    const deckContainer = this.deckContainer || (typeof document !== 'undefined' ? document.getElementById('deck-lyrics-container') : null);
+  renderDeckLyrics() {
+    const deckContainer = this.getDeckContainer();
     if (!deckContainer) return;
     deckContainer.textContent = ''; // Safe clear
 
@@ -183,50 +200,68 @@ class LyricsViewManager {
       return;
     }
 
-    const prevItem = activeIndex > 0 ? this.lyricsData[activeIndex - 1] : null;
-    const currentItem = activeIndex >= 0 ? this.lyricsData[activeIndex] : this.lyricsData[0];
-    const nextItem = activeIndex + 1 < this.lyricsData.length ? this.lyricsData[activeIndex + 1] : null;
-
-    const wrapper = createElement('div', { className: 'deck-lyrics-context' });
-
-    // Previous Line
-    if (prevItem) {
-      wrapper.appendChild(createElement('div', {
-        className: 'deck-lyric-line prev',
-        text: prevItem.text,
-        events: { click: () => this.onSeekCallback?.(prevItem.time) }
-      }));
-    } else {
-      wrapper.appendChild(createElement('div', { className: 'deck-lyric-line prev spacer', text: '' }));
-    }
-
-    // Current Line + Translation
-    if (currentItem) {
-      const currentChildren = [
-        createElement('div', { className: 'deck-lyric-text current', text: currentItem.text })
+    this.lyricsData.forEach((item, index) => {
+      const lineChildren = [
+        createElement('div', { className: 'deck-lyric-text', text: item.text })
       ];
-      if (currentItem.translation) {
-        currentChildren.push(createElement('div', { className: 'deck-lyric-translation current', text: currentItem.translation }));
+      if (item.translation) {
+        lineChildren.push(createElement('div', { className: 'deck-lyric-translation', text: item.translation }));
       }
-      wrapper.appendChild(createElement('div', {
-        className: 'deck-lyric-current-box',
-        children: currentChildren,
-        events: { click: () => this.onSeekCallback?.(currentItem.time) }
-      }));
+
+      const lineEl = createElement('div', {
+        className: 'deck-lyric-line',
+        dataset: { deckIndex: String(index), time: String(item.time) },
+        attributes: { role: 'button', tabindex: '0', 'aria-label': `跳转到 ${item.time.toFixed(1)} 秒` },
+        children: lineChildren,
+        events: {
+          click: () => {
+            if (this.onSeekCallback) {
+              this.onSeekCallback(item.time);
+            }
+          },
+          keydown: (event) => {
+            if ((event.key === 'Enter' || event.key === ' ') && this.onSeekCallback) {
+              event.preventDefault();
+              // Stop Space from also triggering the deck-level skip shortcut
+              event.stopPropagation();
+              this.onSeekCallback(item.time);
+            }
+          }
+        }
+      });
+
+      deckContainer.appendChild(lineEl);
+    });
+
+    deckContainer.scrollTop = 0;
+    if (this.currentActiveIndex >= 0) {
+      this.updateDeckActiveLyric(this.currentActiveIndex);
+    }
+  }
+
+  updateDeckActiveLyric(newIndex) {
+    const deckContainer = this.getDeckContainer();
+    if (!deckContainer || this.lyricsData.length === 0) return;
+
+    const oldActive = deckContainer.querySelector('.deck-lyric-line.active');
+    if (oldActive) {
+      oldActive.classList.remove('active');
     }
 
-    // Next Line
-    if (nextItem) {
-      wrapper.appendChild(createElement('div', {
-        className: 'deck-lyric-line next',
-        text: nextItem.text,
-        events: { click: () => this.onSeekCallback?.(nextItem.time) }
-      }));
-    } else {
-      wrapper.appendChild(createElement('div', { className: 'deck-lyric-line next spacer', text: '' }));
-    }
+    if (newIndex >= 0) {
+      const newActive = deckContainer.querySelector(`[data-deck-index="${newIndex}"]`);
+      if (newActive) {
+        newActive.classList.add('active');
 
-    deckContainer.appendChild(wrapper);
+        // Smooth scroll container to center the active line
+        const containerHeight = deckContainer.clientHeight || 280;
+        const targetTop = newActive.offsetTop - (containerHeight / 2) + (newActive.offsetHeight / 2);
+        deckContainer.scrollTo({
+          top: Math.max(0, targetTop),
+          behavior: preferredScrollBehavior()
+        });
+      }
+    }
   }
 
   updateTime(currentTime) {
@@ -236,8 +271,8 @@ class LyricsViewManager {
     if (newIndex !== this.currentActiveIndex) {
       this.currentActiveIndex = newIndex;
 
-      // Update Deck Contextual Lyrics
-      this.renderDeckLyrics(newIndex);
+      // Update Deck Continuous Rolling Lyrics
+      this.updateDeckActiveLyric(newIndex);
 
       // Update Drawer Lyrics if open
       if (this.container) {
@@ -248,7 +283,7 @@ class LyricsViewManager {
           const newEl = this.container.querySelector(`[data-index="${newIndex}"]`);
           if (newEl) {
             newEl.classList.add('active');
-            newEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            newEl.scrollIntoView({ behavior: preferredScrollBehavior(), block: 'center' });
           }
         }
       }

@@ -90,9 +90,19 @@ class ImportManager {
         const importedCount = res.data.imported_count || res.data.tracks?.length || 0;
         toast.success('导入成功', `成功将 ${importedCount} 首曲目导入本地缓存。`);
 
-        if (Array.isArray(res.data.tracks)) {
-          state.set({ catalog: res.data.tracks });
-          state.emit('catalog:loaded', res.data.tracks);
+        // The import response contains only the imported tracks; re-fetch the
+        // full catalog so other playlists do not vanish from the local views.
+        try {
+          const catRes = await api.getCatalog();
+          if (catRes.ok && catRes.data) {
+            const tracks = Array.isArray(catRes.data.tracks)
+              ? catRes.data.tracks
+              : (Array.isArray(catRes.data) ? catRes.data : []);
+            state.set({ catalog: tracks });
+            state.emit('catalog:loaded', tracks);
+          }
+        } catch (err) {
+          console.warn('Catalog refresh after import failed:', err);
         }
         modal.close('#import-modal');
       } else {

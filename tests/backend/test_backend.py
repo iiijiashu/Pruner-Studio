@@ -159,6 +159,25 @@ class BackendTestCase(unittest.TestCase):
         self.assertEqual(rules, self.app.api("GET", "/api/rules").payload["data"]["rules"])
         self.assertFalse(list(self.data_dir.glob("*.tmp")))
 
+    def test_rules_output_playlist_name_is_optional(self):
+        # The rule editor labels the output playlist name as 可选; saving a rule
+        # without one must succeed instead of failing with RULE_INVALID.
+        optional_rules = [
+            {"id": "short", "name": "短片段", "enabled": True, "match_clauses": [{"field": "duration", "operator": "lt", "value": 60}], "output_playlist_name": ""},
+            {"id": "no_output", "name": "无输出", "enabled": False, "match_clauses": [{"field": "title", "operator": "contains", "value": "demo"}]},
+        ]
+        updated = self.app.api("PUT", "/api/rules", {"rules": optional_rules})
+        self.assertEqual(200, updated.status)
+        self.assertEqual("", updated.payload["data"]["rules"][0]["output_playlist_name"])
+        self.assertEqual("", updated.payload["data"]["rules"][1]["output_playlist_name"])
+        fetched = self.app.api("GET", "/api/rules")
+        self.assertEqual(200, fetched.status)
+        self.assertEqual(["short", "no_output"], [rule["id"] for rule in fetched.payload["data"]["rules"]])
+        oversized = [{"id": "bad", "name": "Bad", "enabled": True, "match_clauses": [{"field": "duration", "operator": "lt", "value": 60}], "output_playlist_name": "x" * 101}]
+        rejected = self.app.api("PUT", "/api/rules", {"rules": oversized})
+        self.assertEqual(400, rejected.status)
+        self.assertEqual("RULE_INVALID", rejected.payload["error"]["code"])
+
     def test_audio_uses_only_strict_title_artist_duration_match(self):
         content = json.dumps([{"id": 1, "title": "Hello!", "artists": ["Alice"], "duration": 180000}])
         self.app.api("POST", "/api/catalog/import", {"format": "json", "content": content})

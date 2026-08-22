@@ -43,6 +43,7 @@ import { deckManager } from '../../web/js/deck.js';
 import { catalogManager } from '../../web/js/catalog.js';
 import { RuleEngine, rulesManager } from '../../web/js/rules.js';
 import { cloudManager } from '../../web/js/cloud.js';
+import { importManager } from '../../web/js/import.js';
 
 export async function runRegressionFixesTests() {
   console.log('Testing Phase 2 Root Cause Fixes & Edge Cases...');
@@ -299,6 +300,50 @@ export async function runRegressionFixesTests() {
     // 7. Rules: strictly preview/select/stage without bypass or AI copy
     // ------------------------------------------------------------------------
     assert.equal(typeof rulesManager.createPlaylistFromMatched, 'undefined', 'Direct create playlist function must be removed from rules');
+
+    // ------------------------------------------------------------------------
+    // 8. Import refreshes the full catalog instead of replacing it with the
+    //    import subset (other playlists must not vanish after an import).
+    // ------------------------------------------------------------------------
+    {
+      const likedSong = { id: 1, title: '一', source_playlist_id: 10 };
+      const importedSong = { id: 88, title: '导入曲目', source_playlist_id: 'imported' };
+      state.set({ catalog: [likedSong] });
+
+      globalThis.fetch = async (url) => {
+        if (String(url).includes('/api/catalog/import')) {
+          return {
+            ok: true,
+            status: 200,
+            headers: new Map([['content-type', 'application/json']]),
+            json: async () => ({ ok: true, data: { imported_count: 1, tracks: [importedSong] }, error: null }),
+          };
+        }
+        if (String(url).includes('/api/catalog')) {
+          return {
+            ok: true,
+            status: 200,
+            headers: new Map([['content-type', 'application/json']]),
+            json: async () => ({ ok: true, data: { tracks: [likedSong, importedSong] }, error: null }),
+          };
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      };
+
+      await importManager.handleFile({ name: 'backup.json', text: async () => JSON.stringify([importedSong]) });
+
+      const catalogAfterImport = state.get('catalog');
+      assert.equal(
+        catalogAfterImport.some(s => s.id === 1),
+        true,
+        'Import must not drop previously synced tracks from the local catalog view'
+      );
+      assert.equal(
+        catalogAfterImport.some(s => s.id === 88 && s.source_playlist_id === 'imported'),
+        true,
+        'Imported track must appear in the local catalog view'
+      );
+    }
 
     console.log('✓ Phase 2 Root Cause Fixes & Edge Cases tests passed!');
   } finally {

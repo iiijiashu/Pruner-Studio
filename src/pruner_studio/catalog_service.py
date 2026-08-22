@@ -198,7 +198,7 @@ class RulesService:
                 raise AppError("RULE_INVALID", "规则 ID 或名称无效或重复")
             if not isinstance(clauses, list) or len(clauses) > 20 or not all(isinstance(item, dict) for item in clauses):
                 raise AppError("RULE_INVALID", f"规则“{name}”的匹配条件无效")
-            if not output or len(output) > 100:
+            if len(output) > 100:
                 raise AppError("RULE_INVALID", f"规则“{name}”的输出歌单名无效")
             ids.add(rule_id)
             validated.append(
