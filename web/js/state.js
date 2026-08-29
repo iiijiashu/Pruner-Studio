@@ -101,7 +101,7 @@ class Store {
       hasUnknownResult: false,
       destructiveFrozen: false,
       unknownResultDetail: null,
-      ignoredUnknownOperations: new Set(),
+      pendingOperations: [],
     };
 
     // Load initial preferences
@@ -311,43 +311,43 @@ class Store {
     return this.reviewSongKey(song, 'unknown');
   }
 
-  unknownOperationKey(song, action, playlistId) {
-    if (!song || !action) return null;
-    return `${String(action)}:${this.reviewSongKey(song, playlistId)}`;
-  }
-
-  ignoreUnknownOperation(song, action, playlistId) {
-    const key = this.unknownOperationKey(song, action, playlistId);
-    if (!key) return false;
-    const ignored = new Set(this.state.ignoredUnknownOperations || []);
-    ignored.add(key);
-    this.set({ ignoredUnknownOperations: ignored });
-    return true;
-  }
-
-  isUnknownOperationIgnored(song, action, playlistId) {
-    const key = this.unknownOperationKey(song, action, playlistId);
-    return Boolean(key && (this.state.ignoredUnknownOperations || new Set()).has(key));
-  }
-
-  clearIgnoredUnknownOperation(song, action, playlistId) {
-    const key = this.unknownOperationKey(song, action, playlistId);
-    if (!key) return false;
-    const ignored = new Set(this.state.ignoredUnknownOperations || []);
-    const changed = ignored.delete(key);
-    if (changed) this.set({ ignoredUnknownOperations: ignored });
-    return changed;
-  }
-
-  clearIgnoredUnknownOperationsForPlaylist(playlistId) {
-    const pid = String(playlistId);
-    const ignored = new Set(
-      [...(this.state.ignoredUnknownOperations || [])].filter(key => (
-        !String(key).startsWith(`unlike:${pid}:`)
-        && !String(key).startsWith(`remove_tracks:${pid}:`)
-      )),
-    );
-    this.set({ ignoredUnknownOperations: ignored });
+  restorePendingOperations(operations) {
+    const pending = Array.isArray(operations)
+      ? operations.filter(item => (
+          item
+          && typeof item === 'object'
+          && typeof item.operation_id === 'string'
+          && ['unlike', 'remove_tracks', 'create_playlist', 'add_tracks'].includes(item.action)
+          && item.target
+          && typeof item.target === 'object'
+        ))
+      : [];
+    const first = pending[0] || null;
+    let detail = null;
+    if (first) {
+      const songId = Array.isArray(first.target.song_ids) ? first.target.song_ids[0] : null;
+      const playlistId = first.target.source_playlist_id ?? first.target.playlist_id ?? null;
+      const song = (this.state.catalog || []).find(item => (
+        String(item.id) === String(songId)
+        && (playlistId === null || String(item.source_playlist_id) === String(playlistId))
+      )) || (songId !== null ? { id: songId, title: `歌曲 #${songId}`, source_playlist_id: playlistId } : null);
+      detail = {
+        pendingOperation: first,
+        operationId: first.operation_id,
+        song,
+        action: first.action,
+        playlistId,
+        targetName: first.target.name || (playlistId !== null ? `歌单 #${playlistId}` : '云端歌单'),
+        originalIndex: null,
+      };
+    }
+    this.set({
+      pendingOperations: pending,
+      hasUnknownResult: pending.length > 0,
+      destructiveFrozen: pending.length > 0,
+      unknownResultDetail: detail,
+    });
+    return pending;
   }
 
   // --- Settings Persistence ---
@@ -475,12 +475,11 @@ class Store {
   // --- Staged Batch Queue (Batch Mode, Persisted) ---
 
   stageBatchAction(song, action = 'unlike', playlistId = null, targetName = '') {
-    if (!song) return false;
+    if (!song || this.state.destructiveFrozen || this.state.hasUnknownResult) return false;
     const resolved = this.resolveDestructiveAction(song, playlistId);
     if (!resolved.valid || resolved.action !== action || String(resolved.playlistId) !== String(playlistId)) {
       return false;
     }
-    if (this.isUnknownOperationIgnored(song, action, playlistId)) return false;
     const queue = [...(this.state.batchQueue || [])];
     const exists = queue.some(item => String(item.song.id) === String(song.id) && String(item.playlistId) === String(playlistId) && item.action === action);
     if (!exists) {

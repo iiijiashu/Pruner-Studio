@@ -1,24 +1,27 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools==84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pruner-studio"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A local-first music library organizer for personal NetEase Cloud Music accounts"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [{name = "Pruner Studio contributors"}]
-dependencies = ["qrcode[pil]>=8.0,<9"]
+dependencies = ["qrcode[pil]==8.2", "Pillow==12.3.0"]
 
 [project.optional-dependencies]
-build = ["pyinstaller>=6.0,<7"]
+build = ["pyinstaller==6.22.2", "setuptools==84.0.0"]
 
 [project.scripts]
 pruner-studio = "pruner_studio.app:serve"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[tool.setuptools.dynamic]
+version = {attr = "pruner_studio.version.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]

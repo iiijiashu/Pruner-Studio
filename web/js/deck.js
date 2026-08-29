@@ -471,11 +471,6 @@ class DeckReviewEngine {
       return;
     }
 
-    if (state.isUnknownOperationIgnored(song, resolved.action, resolved.playlistId)) {
-      toast.warning('该操作已在本地忽略', '此前远端结果未确定。请先只读核对，当前不会盲目重试。');
-      return;
-    }
-
     // Show first-use explanation once
     this.checkFirstUseExplanation();
 
@@ -534,14 +529,28 @@ class DeckReviewEngine {
               });
               toast.success('已同步至云端', `"${song.title}" 已从${resolved.targetName}同步处理。`);
             } else if (isUnknown) {
-              await this.handleCommitFailureWithReconcile(song, resolved.action, resolved.playlistId, resolved.targetName, currentIndex);
+              await this.handleCommitFailureWithReconcile(
+                song,
+                resolved.action,
+                resolved.playlistId,
+                resolved.targetName,
+                currentIndex,
+                res.data?.pending_operation_ids?.[0] || null,
+              );
             } else if (res.ok && res.data && Array.isArray(res.data.failed_items) && res.data.failed_items.some(f => String(f.id) === String(song.id))) {
               const failReason = res.data.failed_items.find(f => String(f.id) === String(song.id))?.reason || '远程操作被拒绝';
               toast.error('云端同步失败', `未能处理 "${song.title}": ${failReason}`);
               this.restoreSongToDeck(song, currentIndex);
             } else {
               // Non-success / network error / unknown status -> read-only reconcile
-              await this.handleCommitFailureWithReconcile(song, resolved.action, resolved.playlistId, resolved.targetName, currentIndex);
+              await this.handleCommitFailureWithReconcile(
+                song,
+                resolved.action,
+                resolved.playlistId,
+                resolved.targetName,
+                currentIndex,
+                res.data?.pending_operation_ids?.[0] || null,
+              );
             }
           } catch (err) {
             await this.handleCommitFailureWithReconcile(song, resolved.action, resolved.playlistId, resolved.targetName, currentIndex);
@@ -605,12 +614,11 @@ class DeckReviewEngine {
    * @param {number|string|null} playlistId
    * @param {string} targetName
    */
-  async handleCommitFailureWithReconcile(song, action, playlistId, targetName, originalIndex = null) {
+  async handleCommitFailureWithReconcile(song, action, playlistId, targetName, originalIndex = null, operationId = null) {
     toast.info('正在只读核对', `网络未确认 "${song.title}" 状态，正在核对云端结果...`);
     try {
       const recRes = await api.reconcileOperations(action, playlistId, [song.id], playlistId);
       if (recRes.ok && recRes.data && Array.isArray(recRes.data.successful_ids) && recRes.data.successful_ids.map(String).includes(String(song.id))) {
-        state.clearIgnoredUnknownOperation(song, action, playlistId);
         state.removeConfirmedSongs([song.id], playlistId, action);
         state.set({ hasUnknownResult: false, destructiveFrozen: false, unknownResultDetail: null });
         toast.success('已核对确认', `"${song.title}" 经只读核对已成功在远端处理。`);
@@ -618,7 +626,6 @@ class DeckReviewEngine {
         return;
       }
       if (recRes.ok && recRes.data && Array.isArray(recRes.data.failed_items) && recRes.data.failed_items.some(item => String(item.id) === String(song.id))) {
-        state.clearIgnoredUnknownOperation(song, action, playlistId);
         this.restoreSongToDeck(song, originalIndex);
         state.set({ hasUnknownResult: false, destructiveFrozen: false, unknownResultDetail: null });
         toast.info('云端未发生变更', `"${song.title}" 已保留，可以继续整理。`);
@@ -630,23 +637,85 @@ class DeckReviewEngine {
 
     // Remote status remains unknown: freeze destructive actions and display unknown_result state
     this.restoreSongToDeck(song, originalIndex);
+    let pendingOperation = null;
+    try {
+      const pending = await api.getPendingOperations();
+      if (pending.ok && Array.isArray(pending.data?.operations)) {
+        state.restorePendingOperations(pending.data.operations);
+        pendingOperation = pending.data.operations.find(item => item.operation_id === operationId)
+          || pending.data.operations.find(item => (
+            item.action === action
+            && String(item.target?.source_playlist_id ?? item.target?.playlist_id) === String(playlistId)
+            && (item.target?.song_ids || []).map(String).includes(String(song.id))
+          ))
+          || null;
+      }
+    } catch {}
     state.set({
       hasUnknownResult: true,
       destructiveFrozen: true,
-      unknownResultDetail: { song, action, playlistId, targetName, originalIndex },
+      unknownResultDetail: {
+        song,
+        action,
+        playlistId,
+        targetName,
+        originalIndex,
+        operationId: pendingOperation?.operation_id || operationId,
+        pendingOperation,
+      },
     });
     toast.error('远端状态未确定', `未能确认 "${song.title}" 的远端执行结果，破坏性操作已冻结。禁止盲目重试。`);
     this.render();
   }
 
-  dismissUnknownResultLocally() {
-    const detail = state.get('unknownResultDetail');
-    if (detail?.song && detail?.action) {
-      state.ignoreUnknownOperation(detail.song, detail.action, detail.playlistId);
+  async refreshRecoveredOperations() {
+    const pending = await api.getPendingOperations();
+    if (!pending.ok || !pending.data || !Array.isArray(pending.data.operations)) {
+      return false;
     }
-    state.set({ hasUnknownResult: false, destructiveFrozen: false, unknownResultDetail: null });
+    state.restorePendingOperations(pending.data.operations);
     this.render();
-    toast.info('已解除冻结', '曲目保留在本地；同一云端操作已标记为本地忽略，不会被盲目重试。');
+    return true;
+  }
+
+  async reconcileRecoveredOperation(operation) {
+    if (!operation?.operation_id) return false;
+    const result = await api.reconcilePendingOperation(operation.operation_id);
+    if (!result.ok) {
+      toast.error('只读核对失败', result.error?.message || '暂时无法确认远端结果，写操作仍保持冻结。');
+      return false;
+    }
+    if (!(await this.refreshRecoveredOperations())) {
+      toast.warning('核对结果待刷新', '远端核对已返回，但恢复日志暂时无法刷新；写操作仍保持冻结。');
+      return false;
+    }
+    if ((state.get('pendingOperations') || []).length === 0) {
+      toast.success('恢复核对完成', '未确定操作已得到确认，破坏性操作已解除冻结。');
+      state.emit('auth:success', state.get('user'));
+    }
+    return true;
+  }
+
+  async ignoreRecoveredOperation(operation) {
+    if (!operation?.operation_id) return false;
+    const result = await api.ignorePendingOperation(operation.operation_id);
+    if (!result.ok) {
+      toast.error('无法忽略操作', result.error?.message || '恢复日志未更新，写操作仍保持冻结。');
+      return false;
+    }
+    if (!(await this.refreshRecoveredOperations())) return false;
+    toast.info('已明确忽略', '该语义操作仍被后端标记，后续不会盲目重发。');
+    return true;
+  }
+
+  async dismissUnknownResultLocally() {
+    const detail = state.get('unknownResultDetail');
+    const operationId = detail?.pendingOperation?.operation_id || detail?.operationId;
+    if (operationId) {
+      await this.ignoreRecoveredOperation(detail.pendingOperation || { operation_id: operationId });
+      return;
+    }
+    toast.error('无法忽略操作', '恢复日志标识不可用，写操作仍保持冻结。请重新加载后再试。');
   }
 
   /**
@@ -818,7 +887,9 @@ class DeckReviewEngine {
                 text: '只读核对状态',
                 events: {
                   click: async () => {
-                    if (detail) {
+                    if (detail?.pendingOperation) {
+                      await this.reconcileRecoveredOperation(detail.pendingOperation);
+                    } else if (detail) {
                       await this.handleCommitFailureWithReconcile(
                         detail.song,
                         detail.action,

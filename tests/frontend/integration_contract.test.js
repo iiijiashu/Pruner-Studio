@@ -19,9 +19,13 @@ if (typeof globalThis.localStorage === 'undefined') {
 import { api } from '../../web/js/api.js';
 import { auth } from '../../web/js/auth.js';
 import { App } from '../../web/js/app.js';
+import { catalogManager } from '../../web/js/catalog.js';
 import { cloudManager } from '../../web/js/cloud.js';
 import { deckManager } from '../../web/js/deck.js';
+import { modal } from '../../web/js/modal.js';
+import { rulesManager } from '../../web/js/rules.js';
 import { state } from '../../web/js/state.js';
+import { toast } from '../../web/js/toast.js';
 
 export async function runIntegrationContractTests() {
   console.log('Testing cross-layer frontend contracts...');
@@ -177,21 +181,96 @@ export async function runIntegrationContractTests() {
   api.reconcileOperations = originalReconcile;
   state.set({ hasUnknownResult: false, destructiveFrozen: false, unknownResultDetail: null });
 
-  // Choosing to keep an unresolved single-track result locally must create an
-  // explicit ignore marker so that the same action cannot be blindly retried.
+  // Ignore is authoritative only after the backend journal confirms it. A
+  // pending-list outage must retain the global freeze instead of falling back
+  // to a browser-only marker.
+  const originalIgnorePendingOperation = api.ignorePendingOperation;
+  const originalPendingAfterIgnore = api.getPendingOperations;
   state.set({
     catalog: [s1, s2],
     deckQueue: [s1, s2],
     deckIndex: 0,
     hasUnknownResult: true,
     destructiveFrozen: true,
-    unknownResultDetail: { song: s1, action: 'unlike', playlistId: 10, targetName: liked.name, originalIndex: 0 },
-    ignoredUnknownOperations: new Set(),
+    unknownResultDetail: {
+      song: s1,
+      action: 'unlike',
+      playlistId: 10,
+      targetName: liked.name,
+      originalIndex: 0,
+      operationId: 'pending-op-1',
+    },
   });
-  deckManager.dismissUnknownResultLocally();
-  assert.equal(state.isUnknownOperationIgnored(s1, 'unlike', 10), true);
+  api.ignorePendingOperation = async () => ({ ok: true, data: { state: 'ignored' } });
+  api.getPendingOperations = async () => ({ ok: false, data: null, error: { code: 'LOCAL_DATA_UNREADABLE' } });
+  await deckManager.dismissUnknownResultLocally();
+  assert.equal(state.get('destructiveFrozen'), true);
+  assert.equal(state.get('hasUnknownResult'), true);
+
+  api.getPendingOperations = async () => ({ ok: true, data: { operations: [] }, error: null });
+  await deckManager.dismissUnknownResultLocally();
   assert.equal(state.get('destructiveFrozen'), false);
-  assert.equal(state.stageBatchAction(s1, 'unlike', 10, liked.name), false, 'Ignored unknown action cannot enter batch writes');
+  assert.equal(state.get('hasUnknownResult'), false);
+  api.ignorePendingOperation = originalIgnorePendingOperation;
+  api.getPendingOperations = originalPendingAfterIgnore;
+
+  // A confirmed playlist creation with definite add failures preserves only
+  // those failed tracks in the catalog selection and reports a warning.
+  let createHandler = null;
+  const createSubmit = {
+    disabled: false,
+    addEventListener(type, handler) {
+      if (type === 'click') createHandler = handler;
+    },
+  };
+  globalThis.document = {
+    getElementById(id) {
+      if (id === 'create-playlist-submit-btn') return createSubmit;
+      if (id === 'create-playlist-name-input') return { value: 'Partial List' };
+      return null;
+    },
+  };
+  const originalCreatePlaylist = api.createPlaylist;
+  const originalCatalogRender = catalogManager.render;
+  const originalLoadPlaylists = cloudManager.loadPlaylists;
+  const originalModalClose = modal.close;
+  const originalToastInfo = toast.info;
+  const originalToastWarning = toast.warning;
+  const originalToastSuccess = toast.success;
+  let warningTitle = null;
+  try {
+    state.set({ catalog: [s1, s2], catalogSelectedIds: new Set(['10:1', '10:2']) });
+    api.createPlaylist = async () => ({
+      ok: true,
+      data: {
+        successful_ids: [1],
+        failed_items: [{ id: 2, code: 'UPSTREAM_REJECTED', reason: 'rejected' }],
+        unknown_items: [],
+        pending_operation_ids: [],
+      },
+      error: null,
+    });
+    catalogManager.render = () => {};
+    cloudManager.loadPlaylists = async () => {};
+    modal.close = () => {};
+    toast.info = () => {};
+    toast.success = () => {};
+    toast.warning = title => { warningTitle = title; };
+    new App().initModalsAndForms();
+    assert.equal(typeof createHandler, 'function');
+    await createHandler();
+    assert.deepEqual([...state.get('catalogSelectedIds')], ['10:2']);
+    assert.equal(warningTitle, '歌单已创建，部分歌曲未添加');
+  } finally {
+    globalThis.document = originalDocument;
+    api.createPlaylist = originalCreatePlaylist;
+    catalogManager.render = originalCatalogRender;
+    cloudManager.loadPlaylists = originalLoadPlaylists;
+    modal.close = originalModalClose;
+    toast.info = originalToastInfo;
+    toast.warning = originalToastWarning;
+    toast.success = originalToastSuccess;
+  }
 
   // A delayed single-track commit must re-check the global freeze at expiry.
   const originalCreateSoftCommit = state.createSoftCommit;
@@ -321,12 +400,204 @@ export async function runIntegrationContractTests() {
   api.getPlaylists = originalGetPlaylists;
   api.getCatalog = originalGetCatalog;
 
+  // Auth startup must restore durable backend recovery state and freeze every
+  // new destructive write until the recorded operation is reconciled/ignored.
+  const recoveredOperation = {
+    operation_id: 'a'.repeat(32),
+    action: 'unlike',
+    state: 'sent_unknown',
+    target: { playlist_id: 10, source_playlist_id: 10, song_ids: [1] },
+    resource_id: null,
+  };
+  const originalGetStatusForRecovery = api.getStatus;
+  const originalRecoveryUserUi = auth.updateUserUI;
+  const originalRecoveryLoginShell = auth.updateLoginShell;
+  api.getStatus = async () => ({
+    ok: true,
+    data: {
+      authenticated: true,
+      user: { user_id: 9911, display_name: '恢复测试' },
+      pending_operations: [recoveredOperation],
+    },
+    error: null,
+  });
+  auth.updateUserUI = () => {};
+  auth.updateLoginShell = () => {};
+  await auth.checkSession();
+  assert.equal(state.get('destructiveFrozen'), true, 'Recovered pending writes must freeze destructive actions');
+  assert.equal(state.get('hasUnknownResult'), true);
+  assert.equal(state.get('pendingOperations')[0].operation_id, recoveredOperation.operation_id);
+
+  const originalReconcilePending = api.reconcilePendingOperation;
+  const originalGetPending = api.getPendingOperations;
+  let recoveredReconcileCalls = 0;
+  api.reconcilePendingOperation = async id => {
+    recoveredReconcileCalls += 1;
+    assert.equal(id, recoveredOperation.operation_id);
+    return { ok: true, data: { successful_ids: [1] }, error: null };
+  };
+  api.getPendingOperations = async () => ({ ok: true, data: { operations: [] }, error: null });
+  assert.equal(typeof deckManager.reconcileRecoveredOperation, 'function');
+  await deckManager.reconcileRecoveredOperation(recoveredOperation);
+  assert.equal(recoveredReconcileCalls, 1);
+  assert.equal(state.get('destructiveFrozen'), false, 'Confirmed recovery must release the global write freeze');
+  assert.deepEqual(state.get('pendingOperations'), []);
+
+  api.getStatus = originalGetStatusForRecovery;
+  auth.updateUserUI = originalRecoveryUserUi;
+  auth.updateLoginShell = originalRecoveryLoginShell;
+  api.reconcilePendingOperation = originalReconcilePending;
+  api.getPendingOperations = originalGetPending;
+
+  // The open pending drawer must refresh countdown labels and release its
+  // interval when no soft commits remain.
+  const originalSetInterval = globalThis.setInterval;
+  const originalClearInterval = globalThis.clearInterval;
+  const countdownDocument = globalThis.document;
+  let intervalCallback = null;
+  let clearedIntervals = 0;
+  globalThis.setInterval = callback => {
+    intervalCallback = callback;
+    return 77;
+  };
+  globalThis.clearInterval = id => {
+    if (id === 77) clearedIntervals += 1;
+  };
+  try {
+    globalThis.document = {
+      getElementById(id) {
+        if (id === 'pending-actions-drawer') {
+          return { classList: { contains: value => value === 'open' } };
+        }
+        return null;
+      },
+    };
+    const countdownApp = new App();
+    let countdownRenders = 0;
+    countdownApp.renderPendingDrawer = () => { countdownRenders += 1; };
+    state.set({ pendingCommits: [{ id: 'soft', expiresAt: Date.now() + 3000 }] });
+    assert.equal(typeof countdownApp.startPendingDrawerRefresh, 'function');
+    countdownApp.startPendingDrawerRefresh();
+    assert.equal(typeof intervalCallback, 'function');
+    intervalCallback();
+    assert.equal(countdownRenders, 1);
+    state.set({ pendingCommits: [] });
+    intervalCallback();
+    assert.equal(clearedIntervals, 1, 'Countdown interval must stop when the drawer has no soft commits');
+  } finally {
+    globalThis.setInterval = originalSetInterval;
+    globalThis.clearInterval = originalClearInterval;
+    globalThis.document = countdownDocument;
+  }
+
+  // Startup data from a logged-out or superseded account must never refill
+  // the current account's state after its requests finish out of order.
+  const originalLoadRules = rulesManager.loadRules;
+  const originalSyncPlaylistForRace = api.syncPlaylist;
+  const originalRaceRenderPlaylists = cloudManager.renderPlaylists;
+  const originalRacePopulateDropdowns = cloudManager.populatePlaylistDropdowns;
+  const deferred = () => {
+    let resolve;
+    const promise = new Promise(done => { resolve = done; });
+    return { promise, resolve };
+  };
+  const raceApp = new App();
+  raceApp.onCatalogUpdated = () => {};
+  rulesManager.loadRules = async () => {};
+  cloudManager.renderPlaylists = () => {};
+  cloudManager.populatePlaylistDropdowns = () => {};
+  try {
+    const logoutPlaylists = deferred();
+    const logoutCatalog = deferred();
+    api.getPlaylists = () => logoutPlaylists.promise;
+    api.getCatalog = () => logoutCatalog.promise;
+    state.set({
+      authenticated: true,
+      user: { user_id: 1001 },
+      playlists: [],
+      catalog: [],
+      selectedPlaylistId: null,
+    });
+    const staleAfterLogout = raceApp.loadInitialData();
+    state.set({ authenticated: false, user: null, playlists: [], catalog: [], selectedPlaylistId: null, catalogLoading: false });
+    assert.equal(typeof raceApp.invalidateInitialDataLoads, 'function', 'App must expose a logout/session invalidation gate');
+    raceApp.invalidateInitialDataLoads();
+    logoutPlaylists.resolve({ ok: true, data: { playlists: [{ id: 10, name: '旧账号喜欢', kind: 'liked' }] } });
+    logoutCatalog.resolve({ ok: true, data: { tracks: [{ id: 1, source_playlist_id: 10 }] } });
+    await staleAfterLogout;
+    assert.equal(state.get('authenticated'), false);
+    assert.deepEqual(state.get('playlists'), [], 'Logged-out state must not be repopulated by an old request');
+    assert.deepEqual(state.get('catalog'), [], 'Logged-out catalog must remain empty after an old request');
+
+    const accountAPlaylists = deferred();
+    const accountACatalog = deferred();
+    const accountBPlaylists = deferred();
+    const accountBCatalog = deferred();
+    let playlistRequest = 0;
+    let catalogRequest = 0;
+    api.getPlaylists = () => (++playlistRequest === 1 ? accountAPlaylists.promise : accountBPlaylists.promise);
+    api.getCatalog = () => (++catalogRequest === 1 ? accountACatalog.promise : accountBCatalog.promise);
+
+    state.set({ authenticated: true, user: { user_id: 2001 }, playlists: [], catalog: [], selectedPlaylistId: null });
+    const loadA = raceApp.loadInitialData();
+    state.set({ authenticated: true, user: { user_id: 2002 }, playlists: [], catalog: [], selectedPlaylistId: null });
+    const loadB = raceApp.loadInitialData();
+    accountBPlaylists.resolve({ ok: true, data: { playlists: [{ id: 20, name: '账号 B 喜欢', kind: 'liked' }] } });
+    accountBCatalog.resolve({ ok: true, data: { tracks: [{ id: 2, source_playlist_id: 20 }] } });
+    await loadB;
+    accountAPlaylists.resolve({ ok: true, data: { playlists: [{ id: 10, name: '账号 A 喜欢', kind: 'liked' }] } });
+    accountACatalog.resolve({ ok: true, data: { tracks: [{ id: 1, source_playlist_id: 10 }] } });
+    await loadA;
+    assert.equal(state.get('user').user_id, 2002);
+    assert.deepEqual(state.get('playlists').map(item => item.id), [20], 'A slower old-account load must not replace the new account');
+    assert.deepEqual(state.get('catalog').map(item => item.id), [2], 'Catalog results must remain scoped to the newest account load');
+    assert.equal(state.get('selectedPlaylistId'), 20);
+
+    const syncStarted = deferred();
+    const releaseOldSync = deferred();
+    const syncCalls = [];
+    api.getPlaylists = async () => ({
+      ok: true,
+      data: {
+        playlists: [state.getUserId() === '3001'
+          ? { id: 30, name: '账号 A 喜欢', kind: 'liked' }
+          : { id: 40, name: '账号 B 喜欢', kind: 'liked' }],
+      },
+    });
+    api.getCatalog = async () => ({ ok: true, data: { tracks: [] } });
+    api.syncPlaylist = async id => {
+      syncCalls.push(id);
+      if (id === 30) {
+        syncStarted.resolve();
+        return releaseOldSync.promise;
+      }
+      return { ok: true, data: {}, error: null };
+    };
+    const autoSyncApp = new App();
+    autoSyncApp.onCatalogUpdated = () => {};
+    state.set({ authenticated: true, user: { user_id: 3001 }, playlists: [], catalog: [], selectedPlaylistId: null });
+    const oldAccountSync = autoSyncApp.loadInitialData();
+    await syncStarted.promise;
+    state.set({ authenticated: true, user: { user_id: 3002 }, playlists: [], catalog: [], selectedPlaylistId: null });
+    await autoSyncApp.loadInitialData();
+    assert.deepEqual(syncCalls, [30, 40], 'A stale account sync must not suppress the new account initial sync');
+    releaseOldSync.resolve({ ok: true, data: {}, error: null });
+    await oldAccountSync;
+  } finally {
+    api.getPlaylists = originalGetPlaylists;
+    api.getCatalog = originalGetCatalog;
+    rulesManager.loadRules = originalLoadRules;
+    api.syncPlaylist = originalSyncPlaylistForRace;
+    cloudManager.renderPlaylists = originalRaceRenderPlaylists;
+    cloudManager.populatePlaylistDropdowns = originalRacePopulateDropdowns;
+  }
+
   api.unlike = originalUnlike;
   api.backup = originalCloudBackup;
   api.reconcileOperations = originalReconcile;
   cloudManager.renderGroupedBatchQueue = originalRenderQueue;
   cloudManager.renderLogs = originalRenderLogs;
   cloudManager.reloadCatalog = originalReloadCatalog;
-  state.set({ batchQueue: [], hasUnknownResult: false, destructiveFrozen: false, unknownResultDetail: null, ignoredUnknownOperations: new Set() });
+  state.set({ batchQueue: [], hasUnknownResult: false, destructiveFrozen: false, unknownResultDetail: null });
   console.log('✓ cross-layer frontend contracts passed!');
 }

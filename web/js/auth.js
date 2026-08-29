@@ -13,6 +13,7 @@ class AuthManager {
     this.pollInterval = null;
     this.currentQrKey = null;
     this.qrGeneration = 0;
+    this.qrCreatePending = null;
     if (typeof window !== 'undefined') {
       window.addEventListener('pruner:modal-closed', (event) => {
         if (event.detail?.id === 'login-modal') this.stopPolling();
@@ -33,6 +34,7 @@ class AuthManager {
             user: res.data.user || null,
           });
           state.loadUserPreferences();
+          state.restorePendingOperations(res.data.pending_operations || []);
           this.updateUserUI(res.data.user);
           this.updateLoginShell(true);
           return true;
@@ -116,6 +118,8 @@ class AuthManager {
    * Generate QR for the embedded login shell
    */
   async generateShellQr() {
+    this.stopPolling();
+    const generation = ++this.qrGeneration;
     const qrContainer = document.getElementById('shell-qr-image-container');
     const qrStatusText = document.getElementById('shell-qr-status-message');
 
@@ -127,7 +131,8 @@ class AuthManager {
 
     if (qrStatusText) qrStatusText.textContent = '正在获取登录二维码...';
 
-    const res = await api.createQr();
+    const res = await this.enqueueQrCreation();
+    if (generation !== this.qrGeneration) return;
     if (!res.ok || !res.data || !res.data.key) {
       if (qrStatusText) qrStatusText.textContent = res.error?.message || '生成登录二维码失败，请点击重新生成。';
       return;
@@ -178,7 +183,7 @@ class AuthManager {
       qrStatusText.textContent = '正在生成二维码...';
     }
 
-    const res = await api.createQr();
+    const res = await this.enqueueQrCreation();
     if (generation !== this.qrGeneration) return;
     if (!res.ok || !res.data || !res.data.key) {
       if (qrStatusText) {
@@ -214,6 +219,22 @@ class AuthManager {
   }
 
   /**
+   * Keep QR creation in invocation order. The backend intentionally keeps only
+   * one active key, so overlapping requests must not overtake each other.
+   */
+  enqueueQrCreation() {
+    const request = this.qrCreatePending
+      ? this.qrCreatePending.then(() => api.createQr(), () => api.createQr())
+      : Promise.resolve(api.createQr());
+    const tail = request.then(() => undefined, () => undefined);
+    this.qrCreatePending = tail;
+    tail.finally(() => {
+      if (this.qrCreatePending === tail) this.qrCreatePending = null;
+    });
+    return request;
+  }
+
+  /**
    * Poll status of QR code every 2 seconds
    * @param {string} key
    */
@@ -241,6 +262,11 @@ class AuthManager {
       };
 
       if (!res.ok) {
+        if (["QR_CANCELLED", "QR_EXPIRED"].includes(res.error?.code)) {
+          setStatus('二维码已取消或过期，请点击重新生成。');
+          this.stopPolling();
+          return;
+        }
         this.pollInterval = setTimeout(poll, 2000);
         return;
       }

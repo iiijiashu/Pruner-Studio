@@ -21,7 +21,9 @@ export class App {
   constructor() {
     this.currentTab = 'deck';
     this.createPlaylistPending = false;
-    this.isAutoSyncingLiked = false;
+    this.autoSyncGeneration = null;
+    this.initialDataGeneration = 0;
+    this.pendingDrawerRefreshTimer = null;
   }
 
   async init() {
@@ -53,11 +55,13 @@ export class App {
     });
 
     state.on('auth:success', async () => {
+      this.invalidateInitialDataLoads();
       deckManager.resetSessionSnapshot();
       await this.loadInitialData();
     });
 
     state.on('auth:logout', () => {
+      this.invalidateInitialDataLoads();
       state.cancelAllCommits();
       deckManager.resetSessionSnapshot();
       state.set({
@@ -68,7 +72,7 @@ export class App {
         hasUnknownResult: false,
         destructiveFrozen: false,
         unknownResultDetail: null,
-        ignoredUnknownOperations: new Set(),
+        pendingOperations: [],
       });
       deckManager.render();
       catalogManager.render();
@@ -103,15 +107,24 @@ export class App {
    * Load initial data coordinating playlists and catalog regardless of arrival order
    */
   async loadInitialData() {
+    if (!state.get('authenticated')) return;
+    const generation = ++this.initialDataGeneration;
+    const userId = state.getUserId();
+    const isCurrent = () => (
+      generation === this.initialDataGeneration
+      && state.get('authenticated')
+      && state.getUserId() === userId
+    );
     state.set({ catalogLoading: true, catalogError: null });
 
     try {
       // Parallel fetch playlists, rules, catalog
       const [playlistsRes, rulesRes, catalogRes] = await Promise.allSettled([
         api.getPlaylists(),
-        rulesManager.loadRules(),
+        rulesManager.loadRules(isCurrent),
         api.getCatalog(),
       ]);
+      if (!isCurrent()) return;
 
       // 1. Process playlists
       let playlists = [];
@@ -153,13 +166,15 @@ export class App {
       const likedPl = state.getRealLikedPlaylist();
       const hasLikedTracksInCatalog = likedPl && tracks.some(s => String(s.source_playlist_id) === String(likedPl.id));
 
-      if (!initialLoadError && state.get('authenticated') && likedPl && !hasLikedTracksInCatalog && !this.isAutoSyncingLiked) {
-        this.isAutoSyncingLiked = true;
+      if (!initialLoadError && state.get('authenticated') && likedPl && !hasLikedTracksInCatalog && this.autoSyncGeneration !== generation) {
+        this.autoSyncGeneration = generation;
         toast.info('正在初次同步', '正在拉取我喜欢的音乐曲库...');
         try {
           const syncRes = await api.syncPlaylist(likedPl.id);
+          if (!isCurrent()) return;
           if (syncRes.ok) {
             const freshCatRes = await api.getCatalog();
+            if (!isCurrent()) return;
             if (freshCatRes.ok && freshCatRes.data) {
               const freshTracks = Array.isArray(freshCatRes.data.tracks) ? freshCatRes.data.tracks : freshCatRes.data;
               state.set({ catalog: freshTracks });
@@ -167,16 +182,21 @@ export class App {
             }
           }
         } finally {
-          this.isAutoSyncingLiked = false;
+          if (this.autoSyncGeneration === generation) this.autoSyncGeneration = null;
         }
       }
 
       this.onCatalogUpdated(tracks, true);
     } catch (err) {
+      if (!isCurrent()) return;
       console.warn('Initial data load error:', err);
       state.set({ catalogLoading: false, catalogError: err.message });
       deckManager.render();
     }
+  }
+
+  invalidateInitialDataLoads() {
+    this.initialDataGeneration += 1;
   }
 
   onCatalogUpdated(catalog, reloadDeck = false) {
@@ -242,7 +262,12 @@ export class App {
       triggerBtn.addEventListener('click', () => {
         const isOpen = drawer.classList.toggle('open');
         state.set({ isPendingDrawerOpen: isOpen });
-        if (isOpen) this.renderPendingDrawer();
+        if (isOpen) {
+          this.renderPendingDrawer();
+          this.startPendingDrawerRefresh();
+        } else {
+          this.stopPendingDrawerRefresh();
+        }
       });
     }
 
@@ -250,6 +275,7 @@ export class App {
       closeBtn.addEventListener('click', () => {
         drawer.classList.remove('open');
         state.set({ isPendingDrawerOpen: false });
+        this.stopPendingDrawerRefresh();
       });
     }
 
@@ -274,7 +300,27 @@ export class App {
     const drawer = document.getElementById('pending-actions-drawer');
     if (drawer && drawer.classList.contains('open')) {
       this.renderPendingDrawer();
+      if (pendingCommits.length > 0) this.startPendingDrawerRefresh();
+      else this.stopPendingDrawerRefresh();
     }
+  }
+
+  startPendingDrawerRefresh() {
+    if (this.pendingDrawerRefreshTimer || (state.get('pendingCommits') || []).length === 0) return;
+    this.pendingDrawerRefreshTimer = setInterval(() => {
+      const drawer = document.getElementById('pending-actions-drawer');
+      if (!drawer?.classList.contains('open') || (state.get('pendingCommits') || []).length === 0) {
+        this.stopPendingDrawerRefresh();
+        return;
+      }
+      this.renderPendingDrawer();
+    }, 250);
+  }
+
+  stopPendingDrawerRefresh() {
+    if (!this.pendingDrawerRefreshTimer) return;
+    clearInterval(this.pendingDrawerRefreshTimer);
+    this.pendingDrawerRefreshTimer = null;
   }
 
   renderPendingDrawer() {
@@ -578,11 +624,35 @@ export class App {
         try {
           toast.info('正在创建歌单', `创建歌单 "${name}" 中...`);
           const res = await api.createPlaylist(name, selectedIds);
-          if (res.ok) {
-            const count = Array.isArray(res.data?.successful_ids) ? res.data.successful_ids.length : selectedIds.length;
-            toast.success('歌单已创建', `成功在云端创建 "${name}" (${count} 首)。`);
+          const hasUnknown = res.ok && (
+            (Array.isArray(res.data?.unknown_items) && res.data.unknown_items.length > 0)
+            || (Array.isArray(res.data?.pending_operation_ids) && res.data.pending_operation_ids.length > 0)
+          );
+          if (hasUnknown) {
+            const pending = await api.getPendingOperations();
+            if (pending.ok && Array.isArray(pending.data?.operations)) {
+              state.restorePendingOperations(pending.data.operations);
+            }
+            toast.warning('创建结果待核对', res.data?.message || '未确认是否已创建或完成加歌，已冻结新的云端写入。');
             modal.close('#create-playlist-modal');
-            catalogManager.clearSelection();
+          } else if (res.ok) {
+            const count = Array.isArray(res.data?.successful_ids) ? res.data.successful_ids.length : 0;
+            const failedItems = Array.isArray(res.data?.failed_items) ? res.data.failed_items : [];
+            if (failedItems.length > 0) {
+              const failedIds = new Set(failedItems.filter(item => item?.id !== null && item?.id !== undefined).map(item => String(item.id)));
+              const retainedKeys = failedIds.size > 0
+                ? new Set((state.get('catalog') || [])
+                  .filter(song => selectedKeys.has(state.catalogSongKey(song)) && failedIds.has(String(song.id)))
+                  .map(song => state.catalogSongKey(song)))
+                : selectedKeys;
+              state.set({ catalogSelectedIds: retainedKeys });
+              catalogManager.render();
+              toast.warning('歌单已创建，部分歌曲未添加', `已确认添加 ${count} 首，${failedItems.length} 首仍保持选中。`);
+            } else {
+              toast.success('歌单已创建', `成功在云端创建 "${name}" (${count} 首)。`);
+              catalogManager.clearSelection();
+            }
+            modal.close('#create-playlist-modal');
             await cloudManager.loadPlaylists();
           } else {
             toast.error('创建歌单失败', res.error?.message || '服务器拒绝了请求。');

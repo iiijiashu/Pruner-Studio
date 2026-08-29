@@ -7,7 +7,7 @@ import re
 import socket
 import threading
 import webbrowser
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -17,9 +17,12 @@ from .audio_service import AudioService
 from .catalog_service import CatalogService, RulesService
 from .config import Settings
 from .errors import AppError
+from .instance_lock import DataDirectoryLock
 from .netease_client import NeteaseClient, NeteaseWebTransport, Transport
 from .operations import OperationsService
+from .operation_journal import OperationJournal
 from .storage import JsonStore, SessionStore
+from .version import __version__
 
 
 @dataclass(frozen=True)
@@ -64,12 +67,13 @@ class PrunerApplication:
         query = parse_qs(parsed.query)
         try:
             if method == "GET" and path == "/api/health":
-                return success({"status": "ok", "version": "0.1.0"})
+                return success({"status": "ok", "version": __version__})
             if method == "GET" and path == "/api/status":
                 return self._status()
             if method == "POST" and path == "/api/auth/qr":
                 with self._auth_lock:
                     result = self.client.create_qr()
+                    self._active_qr_keys.clear()
                     self._active_qr_keys.add(result["key"])
                 return success(result, 201)
             match = re.fullmatch(r"/api/auth/qr/([^/]+)", path)
@@ -87,22 +91,25 @@ class PrunerApplication:
                         if not self.client.cookie:
                             raise AppError("SESSION_MISSING", "登录成功但会话未保存", 502)
                         self.session.save_cookie(self.client.cookie)
+                        self._clear_transport_cache()
                 return success(result)
             if method == "POST" and path == "/api/auth/logout":
                 with self._auth_lock:
-                    self._active_qr_keys.clear()
-                    self.session.clear()
-                    self.client.set_cookie(None)
+                    self._revoke_session()
                 return success({"authenticated": False})
             if method == "GET" and path == "/api/playlists":
-                return success({"playlists": [item.to_dict() for item in self.client.playlists()]})
+                with self._auth_lock:
+                    playlists = [item.to_dict() for item in self.client.playlists()]
+                return success({"playlists": playlists})
             match = re.fullmatch(r"/api/playlists/(\d+)/sync", path)
             if method == "POST" and match:
                 playlist_id = _positive_id(match.group(1), "PLAYLIST_ID_INVALID")
-                owned = next((item for item in self.client.playlists() if item.id == playlist_id), None)
-                if owned is None:
-                    raise AppError("PLAYLIST_NOT_FOUND", "找不到这个自建歌单", 404)
-                return success(self.catalog.sync(owned))
+                with self._auth_lock:
+                    owned = next((item for item in self.client.playlists() if item.id == playlist_id), None)
+                    if owned is None:
+                        raise AppError("PLAYLIST_NOT_FOUND", "找不到这个自建歌单", 404)
+                    synced = self.catalog.sync(owned)
+                return success(synced)
             if method == "POST" and path == "/api/catalog/import":
                 payload = _object(body)
                 return success(
@@ -117,10 +124,14 @@ class PrunerApplication:
                 return success(self.catalog.view())
             if method == "GET" and path == "/api/lyrics":
                 song_id = _query_id(query)
-                return success(self.client.lyrics(song_id))
+                with self._auth_lock:
+                    lyrics = self.client.lyrics(song_id)
+                return success(lyrics)
             if method == "GET" and path == "/api/audio":
                 song_id = _query_id(query)
-                return success(self.audio.resolve(song_id))
+                with self._auth_lock:
+                    resolved = self.audio.resolve(song_id)
+                return success(resolved)
             if method == "GET" and path == "/api/rules":
                 return success({"rules": self.rules.get()})
             if method == "PUT" and path == "/api/rules":
@@ -129,38 +140,55 @@ class PrunerApplication:
             if method == "POST" and path == "/api/operations/backup":
                 payload = _object(body, allow_none=True)
                 return success(self.operations.backup(payload.get("ids") if payload else None).to_dict(), 201)
+            if method == "GET" and path == "/api/operations/pending":
+                with self._auth_lock:
+                    account = self.client.account()
+                    pending = self.operations.pending_for(account.user_id)
+                return success({"operations": pending})
             if method == "POST" and path == "/api/operations/create-playlist":
                 payload = _object(body)
-                return success(
-                    self.operations.create_playlist(
+                with self._auth_lock:
+                    result = self.operations.create_playlist(
                         payload.get("name"),
                         payload.get("song_ids", []),
                         payload.get("privacy", 0),
-                    ).to_dict(),
-                    201,
-                )
+                    )
+                return success(result.to_dict(), 201)
             if method == "POST" and path == "/api/operations/unlike":
                 payload = _object(body)
-                result = self.operations.unlike(payload.get("song_ids"), payload.get("source_playlist_id"))
+                with self._auth_lock:
+                    result = self.operations.unlike(payload.get("song_ids"), payload.get("source_playlist_id"))
                 return success(result.to_dict())
             match = re.fullmatch(r"/api/playlists/(\d+)/remove-tracks", path)
             if method == "POST" and match:
                 playlist_id = _positive_id(match.group(1), "PLAYLIST_ID_INVALID")
                 payload = _object(body)
-                result = self.operations.remove_tracks(
-                    playlist_id,
-                    payload.get("song_ids"),
-                    payload.get("source_playlist_id"),
-                )
+                with self._auth_lock:
+                    result = self.operations.remove_tracks(
+                        playlist_id,
+                        payload.get("song_ids"),
+                        payload.get("source_playlist_id"),
+                    )
                 return success(result.to_dict())
+            match = re.fullmatch(r"/api/operations/([0-9a-f]{32})/(reconcile|ignore)", path)
+            if method == "POST" and match:
+                operation_id, action = match.groups()
+                with self._auth_lock:
+                    account = self.client.account()
+                    if action == "reconcile":
+                        result = self.operations.reconcile_pending(account.user_id, operation_id).to_dict()
+                    else:
+                        result = self.operations.ignore_pending(account.user_id, operation_id)
+                return success(result)
             if method == "POST" and path == "/api/operations/reconcile":
                 payload = _object(body)
-                result = self.operations.reconcile(
-                    payload.get("action"),
-                    payload.get("playlist_id"),
-                    payload.get("song_ids"),
-                    payload.get("source_playlist_id"),
-                )
+                with self._auth_lock:
+                    result = self.operations.reconcile(
+                        payload.get("action"),
+                        payload.get("playlist_id"),
+                        payload.get("song_ids"),
+                        payload.get("source_playlist_id"),
+                    )
                 return success(result.to_dict())
             raise AppError("ROUTE_NOT_FOUND", "接口不存在", 404)
         except AppError as exc:
@@ -170,16 +198,30 @@ class PrunerApplication:
         except Exception:
             return failure(AppError("INTERNAL_ERROR", "程序内部错误", 500))
 
+    def _clear_transport_cache(self) -> None:
+        clear = getattr(self.client.transport, "clear_caches", None)
+        if callable(clear):
+            clear()
+
+    def _revoke_session(self) -> None:
+        self._active_qr_keys.clear()
+        self.session.clear()
+        self.client.set_cookie(None)
+        self._clear_transport_cache()
+
     def _status(self) -> ApiResponse:
-        if not self.client.cookie:
-            return success({"authenticated": False, "user": None})
-        try:
-            account = self.client.account()
-        except AppError as exc:
-            if exc.status == 401:
+        with self._auth_lock:
+            if not self.client.cookie:
                 return success({"authenticated": False, "user": None})
-            raise
-        return success({"authenticated": True, "user": account.to_dict()})
+            try:
+                account = self.client.account()
+            except AppError as exc:
+                if exc.code == "SESSION_EXPIRED":
+                    self._revoke_session()
+                    return success({"authenticated": False, "user": None})
+                raise
+            pending = self.operations.pending_for(account.user_id)
+        return success({"authenticated": True, "user": account.to_dict(), "pending_operations": pending})
 
     def static(self, raw_path: str) -> tuple[int, bytes, str]:
         path = urlsplit(raw_path).path
@@ -203,6 +245,7 @@ def build_application(settings: Settings | None = None, transport: Transport | N
     session = SessionStore(store)
     client = NeteaseClient(transport or NeteaseWebTransport(selected.api_base), session.load_cookie())
     catalog = CatalogService(store, client, selected.max_batch_size)
+    journal = OperationJournal(store)
     return PrunerApplication(
         selected,
         client,
@@ -210,13 +253,13 @@ def build_application(settings: Settings | None = None, transport: Transport | N
         catalog,
         RulesService(store),
         AudioService(client, catalog, selected.alternative_duration_tolerance_ms),
-        OperationsService(store, client, catalog, selected.max_batch_size),
+        OperationsService(store, client, catalog, journal, selected.max_batch_size),
     )
 
 
 def make_handler(application: PrunerApplication) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
-        server_version = "PrunerStudio/0.1"
+        server_version = f"PrunerStudio/{__version__}"
 
         def do_GET(self) -> None:
             self._dispatch()
@@ -231,6 +274,10 @@ def make_handler(application: PrunerApplication) -> type[BaseHTTPRequestHandler]
             self._json_response(failure(AppError("METHOD_NOT_ALLOWED", "不支持跨域请求", 405)))
 
         def _dispatch(self) -> None:
+            rejected = validate_local_request(self.headers, self.server.server_address[1])
+            if rejected is not None:
+                self._json_response(failure(rejected))
+                return
             if urlsplit(self.path).path.startswith("/api/"):
                 body: Any = None
                 if self.command in {"POST", "PUT"}:
@@ -254,6 +301,9 @@ def make_handler(application: PrunerApplication) -> type[BaseHTTPRequestHandler]
             self.wfile.write(content)
 
         def _read_json(self) -> Any:
+            content_type = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if content_type != "application/json":
+                raise AppError("CONTENT_TYPE_INVALID", "请求内容类型必须是 application/json", 415)
             raw_length = self.headers.get("Content-Length")
             if raw_length is None:
                 return None
@@ -291,38 +341,71 @@ def serve(settings: Settings | None = None, transport: Transport | None = None) 
     selected = settings or Settings.default()
     if selected.host != "127.0.0.1":
         raise ValueError("Pruner Studio may only bind to 127.0.0.1")
-    application = build_application(selected, transport)
-    server = None
-    for candidate_port in range(selected.port, min(65535, selected.port + 20) + 1):
-        try:
-            with socket.create_connection((selected.host, candidate_port), timeout=0.15):
+    canonical_data_dir = Path(os.path.normcase(os.path.realpath(os.path.expanduser(os.fspath(selected.data_dir)))))
+    canonical_data_dir.mkdir(parents=True, exist_ok=True)
+    selected = replace(selected, data_dir=canonical_data_dir)
+    with DataDirectoryLock(selected.data_dir):
+        application = build_application(selected, transport)
+        server = None
+        for candidate_port in range(selected.port, min(65535, selected.port + 20) + 1):
+            try:
+                with socket.create_connection((selected.host, candidate_port), timeout=0.15):
+                    continue
+            except OSError:
+                pass
+            try:
+                server = LoopbackHTTPServer((selected.host, candidate_port), make_handler(application))
+                break
+            except OSError:
                 continue
-        except OSError:
-            pass
+        if server is None:
+            raise OSError("Pruner Studio could not find a free local port")
+        if os.environ.get("PRUNER_STUDIO_NO_BROWSER") != "1":
+            threading.Timer(0.35, lambda: webbrowser.open(f"http://{selected.host}:{server.server_port}/")).start()
         try:
-            server = LoopbackHTTPServer((selected.host, candidate_port), make_handler(application))
-            break
-        except OSError:
-            continue
-    if server is None:
-        raise OSError("Pruner Studio could not find a free local port")
-    if os.environ.get("PRUNER_STUDIO_NO_BROWSER") != "1":
-        threading.Timer(0.35, lambda: webbrowser.open(f"http://{selected.host}:{server.server_port}/")).start()
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.server_close()
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.server_close()
 
 
 class LoopbackHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = False
+    daemon_threads = False
+    block_on_close = True
 
     def server_bind(self) -> None:
         if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
         super().server_bind()
+
+
+def validate_local_request(headers: Any, port: int) -> AppError | None:
+    """Reject requests that did not come from this application's own page.
+
+    A fixed loopback port is reachable from any web page the user visits:
+    browsers let cross-site pages issue blind requests, and DNS rebinding turns
+    an attacker domain same-origin. Exact Host and Origin checks plus Fetch
+    Metadata reject those channels; JSON-only writes add a separate preflight gate.
+    """
+    host = (headers.get("Host") or "").strip().lower()
+    if host not in {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}:
+        return AppError("REQUEST_ORIGIN_REJECTED", "仅接受本机页面发起的请求", 403)
+    fetch_site = (headers.get("Sec-Fetch-Site") or "").strip().lower()
+    if fetch_site and fetch_site not in {"same-origin", "none"}:
+        return AppError("REQUEST_ORIGIN_REJECTED", "仅接受本机页面发起的请求", 403)
+    origin = headers.get("Origin")
+    if origin:
+        parsed = urlsplit(origin.strip())
+        try:
+            origin_port = parsed.port
+        except ValueError:
+            return AppError("REQUEST_ORIGIN_REJECTED", "仅接受本机页面发起的请求", 403)
+        hostname = (parsed.hostname or "").lower()
+        if parsed.scheme != "http" or hostname not in {"127.0.0.1", "localhost", "::1"} or origin_port != port:
+            return AppError("REQUEST_ORIGIN_REJECTED", "仅接受本机页面发起的请求", 403)
+    return None
 
 
 def _build_static_allowlist(web_dir: Path) -> dict[str, Path]:

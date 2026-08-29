@@ -62,6 +62,7 @@ class OperationResult:
     message: str = ""
     resource_id: int | None = None
     unknown_items: list[FailedItem] = field(default_factory=list)
+    pending_operation_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -72,4 +73,5 @@ class OperationResult:
             "unknown_items": [item.to_dict() for item in self.unknown_items],
             "message": self.message,
             "resource_id": self.resource_id,
+            "pending_operation_ids": self.pending_operation_ids,
         }

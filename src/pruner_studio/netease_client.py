@@ -14,6 +14,7 @@ from typing import Any, Protocol
 
 from .errors import AppError, UpstreamError
 from .models import AccountSummary, PlaylistSummary, Song
+from .version import __version__
 
 
 @dataclass(frozen=True)
@@ -60,7 +61,7 @@ class UrllibTransport:
             data = encoded
         headers = {
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Pruner-Studio/0.1",
+            "User-Agent": f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Pruner-Studio/{__version__}",
             "Referer": "https://music.163.com/",
             "Origin": "https://music.163.com",
         }
@@ -103,6 +104,10 @@ class NeteaseWebTransport(UrllibTransport):
         super().__init__(base_url, timeout)
         self._playlist_cache: dict[int, tuple[float, list[dict[str, Any]]]] = {}
         self._playlist_lock = threading.RLock()
+
+    def clear_caches(self) -> None:
+        with self._playlist_lock:
+            self._playlist_cache.clear()
 
     def request(
         self,
@@ -192,6 +197,9 @@ class NeteaseWebTransport(UrllibTransport):
                     else:
                         all_songs = [item for item in raw_tracks if isinstance(item, dict)]
                     self._playlist_cache[playlist_id] = (time.monotonic(), all_songs)
+                    while len(self._playlist_cache) > 4:
+                        oldest = min(self._playlist_cache, key=lambda key: self._playlist_cache[key][0])
+                        self._playlist_cache.pop(oldest)
             try:
                 offset = max(0, int(values.get("offset", 0)))
                 limit = max(1, min(500, int(values.get("limit", 500))))
@@ -359,10 +367,16 @@ class NeteaseClient:
     def account(self) -> AccountSummary:
         if not self.cookie:
             raise AppError("NOT_AUTHENTICATED", "请先扫码登录", 401)
-        payload, _ = self._call("/user/account", {"timestamp": int(time.time() * 1000)})
+        payload, _ = self._call(
+            "/user/account",
+            {"timestamp": int(time.time() * 1000)},
+            accepted_codes={200, 301},
+        )
+        if payload.get("code") == 301:
+            raise AppError("SESSION_EXPIRED", "登录已失效，请重新扫码", 401)
         profile = payload.get("profile")
         if not isinstance(profile, dict) or not isinstance(profile.get("userId"), int):
-            raise AppError("SESSION_EXPIRED", "登录已失效，请重新扫码", 401)
+            raise UpstreamError("ACCOUNT_INVALID", "网易云返回的账号信息格式无效")
         return AccountSummary(
             user_id=profile["userId"],
             display_name=str(profile.get("nickname") or "网易云用户"),
@@ -446,35 +460,24 @@ class NeteaseClient:
             raise UpstreamError("LIKED_LIST_INVALID", "喜欢列表格式无效")
         return {value for value in ids if isinstance(value, int) and value > 0}
 
-    def unlike(self, song_id: int, user_id: int) -> bool:
-        self.request_unlike(song_id)
-        return song_id not in self.liked_ids(user_id)
-
     def request_unlike(self, song_id: int) -> None:
         self._call("/like", {"id": song_id, "like": "false", "timestamp": int(time.time() * 1000)}, method="POST")
 
-    def create_playlist(self, name: str, privacy: int = 0) -> int:
+    def request_create_playlist(self, name: str, privacy: int = 0) -> int:
         payload, _ = self._call("/playlist/create", {"name": name, "privacy": privacy}, method="POST")
         playlist = payload.get("playlist")
         playlist_id = playlist.get("id") if isinstance(playlist, dict) else payload.get("id")
         if not isinstance(playlist_id, int) or playlist_id <= 0:
             raise UpstreamError("CREATE_PLAYLIST_INVALID", "创建歌单后未返回有效 ID")
-        if all(item.id != playlist_id for item in self.playlists()):
-            raise UpstreamError("CREATE_PLAYLIST_UNVERIFIED", "网易云未能确认新歌单")
         return playlist_id
 
-    def add_tracks(self, playlist_id: int, song_ids: list[int]) -> tuple[list[int], list[int]]:
+    def request_add_tracks(self, playlist_id: int, song_ids: list[int]) -> None:
         if not song_ids:
-            return [], []
+            return
         self._call(
             "/playlist/tracks",
             {"op": "add", "pid": playlist_id, "tracks": ",".join(str(value) for value in song_ids)},
             method="POST",
-        )
-        remote_ids = {song.id for song in self.playlist_tracks(playlist_id, fresh=True)}
-        return (
-            [song_id for song_id in song_ids if song_id in remote_ids],
-            [song_id for song_id in song_ids if song_id not in remote_ids],
         )
 
     def request_remove_tracks(self, playlist_id: int, song_ids: list[int]) -> None:
@@ -484,16 +487,6 @@ class NeteaseClient:
             "/playlist/tracks",
             {"op": "del", "pid": playlist_id, "tracks": ",".join(str(value) for value in song_ids)},
             method="POST",
-        )
-
-    def remove_tracks(self, playlist_id: int, song_ids: list[int]) -> tuple[list[int], list[int]]:
-        if not song_ids:
-            return [], []
-        self.request_remove_tracks(playlist_id, song_ids)
-        remote_ids = {song.id for song in self.playlist_tracks(playlist_id, fresh=True)}
-        return (
-            [song_id for song_id in song_ids if song_id not in remote_ids],
-            [song_id for song_id in song_ids if song_id in remote_ids],
         )
 
 

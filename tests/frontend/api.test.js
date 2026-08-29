@@ -64,6 +64,19 @@ export async function runApiTests() {
     assert.equal(inconsistentRes.data, null);
     assert.equal(inconsistentRes.error.code, 'HTTP_ERROR');
 
+    // A 2xx JSON object without the required envelope is a protocol failure,
+    // never an implicit success.
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      headers: new Map([['content-type', 'application/json']]),
+      json: async () => ({ unexpected: true }),
+    });
+    const malformedEnvelope = await api.health();
+    assert.equal(malformedEnvelope.ok, false);
+    assert.equal(malformedEnvelope.data, null);
+    assert.equal(malformedEnvelope.error.code, 'API_CONTRACT_INVALID');
+
     // 4. Network Transport Exception
     globalThis.fetch = async () => {
       throw new Error('Connection refused at 127.0.0.1:8000');
@@ -120,7 +133,33 @@ export async function runApiTests() {
       song_ids: [301],
     });
 
-    // 7. Route does not fabricate success on 404 / 500
+    const pendingRes = await api.getPendingOperations();
+    assert.equal(pendingRes.ok, true);
+    assert.equal(lastUrl, '/api/operations/pending');
+    const pendingReconcile = await api.reconcilePendingOperation('abc123');
+    assert.equal(pendingReconcile.ok, true);
+    assert.equal(lastUrl, '/api/operations/abc123/reconcile');
+    assert.equal(lastMethod, 'POST');
+    const pendingIgnore = await api.ignorePendingOperation('abc123');
+    assert.equal(pendingIgnore.ok, true);
+    assert.equal(lastUrl, '/api/operations/abc123/ignore');
+
+    // Empty mutating requests still use JSON so cross-site simple requests
+    // cannot reach loopback write routes without a CORS preflight.
+    let emptyMutationHeaders = null;
+    globalThis.fetch = async (_url, options) => {
+      emptyMutationHeaders = options.headers;
+      return {
+        ok: true,
+        status: 200,
+        headers: new Map([['content-type', 'application/json']]),
+        json: async () => ({ ok: true, data: {}, error: null }),
+      };
+    };
+    await api.logout();
+    assert.equal(emptyMutationHeaders['Content-Type'], 'application/json');
+
+    // 8. Route does not fabricate success on 404 / 500
     globalThis.fetch = async () => ({
       ok: false,
       status: 404,

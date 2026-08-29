@@ -141,7 +141,6 @@ class CloudOperationsManager {
     try {
       const res = await api.syncPlaylist(playlistId);
       if (res.ok) {
-        state.clearIgnoredUnknownOperationsForPlaylist(playlistId);
         toast.success('同步完成', `已成功同步 ${res.data?.synced_count ?? ''} 首曲目。`);
         await this.reloadCatalog();
       } else {
@@ -492,6 +491,10 @@ class CloudOperationsManager {
         toast.success('批量同步完成', `成功处理全部 ${totalSuccess} 首歌曲变更。`);
       } else {
         toast.warning('部分变更完成', `成功同步 ${totalSuccess} 首，${totalUnresolved} 首失败或待核对，已保留在队列中。`);
+      }
+      const pending = await api.getPendingOperations();
+      if (pending.ok && Array.isArray(pending.data?.operations)) {
+        state.restorePendingOperations(pending.data.operations);
       }
     } finally {
       this.pendingOperations.delete('batch_execute');

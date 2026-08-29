@@ -24,7 +24,7 @@ class CatalogService:
     def get(self) -> dict[str, Any]:
         value = self.store.read(self.FILE_NAME, {"version": 1, "playlists": {}})
         if not isinstance(value, dict) or not isinstance(value.get("playlists"), dict):
-            return {"version": 1, "playlists": {}}
+            raise AppError("LOCAL_DATA_INVALID", "本地曲库结构无效；原文件已保留，未执行覆盖", 500)
         return value
 
     def view(self) -> dict[str, Any]:
@@ -180,9 +180,14 @@ class RulesService:
 
     def get(self) -> list[dict[str, Any]]:
         value = self.store.read(self.FILE_NAME, [])
-        return value if isinstance(value, list) else []
+        if not isinstance(value, list):
+            raise AppError("LOCAL_DATA_INVALID", "本地规则结构无效；原文件已保留，未执行覆盖", 500)
+        return value
 
     def put(self, rules: Any) -> list[dict[str, Any]]:
+        # Read first so a corrupt or structurally invalid existing file cannot
+        # be silently replaced by an apparently successful settings save.
+        self.get()
         if not isinstance(rules, list) or len(rules) > 100:
             raise AppError("RULES_INVALID", "规则必须是数组，且最多 100 条")
         validated: list[dict[str, Any]] = []

@@ -44,13 +44,61 @@ import { catalogManager } from '../../web/js/catalog.js';
 import { RuleEngine, rulesManager } from '../../web/js/rules.js';
 import { cloudManager } from '../../web/js/cloud.js';
 import { importManager } from '../../web/js/import.js';
+import { auth } from '../../web/js/auth.js';
 
 export async function runRegressionFixesTests() {
   console.log('Testing Phase 2 Root Cause Fixes & Edge Cases...');
 
   const originalFetch = globalThis.fetch;
+  const originalDocument = globalThis.document;
 
   try {
+    // ------------------------------------------------------------------------
+    // 0. The newest shell QR request wins when reloads overlap
+    // ------------------------------------------------------------------------
+    const qrContainer = {
+      textContent: '',
+      appendChild() {},
+    };
+    const qrStatus = { textContent: '' };
+    globalThis.document = {
+      getElementById(id) {
+        if (id === 'shell-qr-image-container') return qrContainer;
+        if (id === 'shell-qr-status-message') return qrStatus;
+        return null;
+      },
+      createElement() {
+        return { className: '', src: '', alt: '', textContent: '' };
+      },
+    };
+    const originalCreateQr = api.createQr;
+    const originalStartPolling = auth.startPolling;
+    let resolveFirst;
+    let resolveSecond;
+    const firstQr = new Promise(resolve => { resolveFirst = resolve; });
+    const secondQr = new Promise(resolve => { resolveSecond = resolve; });
+    let requestNumber = 0;
+    const polledKeys = [];
+    try {
+      api.createQr = () => (++requestNumber === 1 ? firstQr : secondQr);
+      auth.startPolling = key => polledKeys.push(key);
+      const firstGeneration = auth.generateShellQr();
+      const secondGeneration = auth.generateShellQr();
+      assert.equal(requestNumber, 1, 'QR creation requests must be serialized in invocation order');
+      resolveFirst({ ok: true, data: { key: 'old-key', qr_image: 'data:image/png;base64,AA==' } });
+      await firstGeneration;
+      await Promise.resolve();
+      assert.equal(requestNumber, 2, 'The next QR request starts only after the previous one settles');
+      resolveSecond({ ok: true, data: { key: 'new-key', qr_image: 'data:image/png;base64,AA==' } });
+      await secondGeneration;
+      assert.equal(auth.currentQrKey, 'new-key', 'Stale QR responses must not replace the newest key');
+      assert.deepEqual(polledKeys, ['new-key'], 'Only the newest QR key may start polling');
+    } finally {
+      api.createQr = originalCreateQr;
+      auth.startPolling = originalStartPolling;
+      globalThis.document = originalDocument;
+    }
+
     // ------------------------------------------------------------------------
     // 1. AccountSummary user_id field compatibility
     // ------------------------------------------------------------------------
@@ -348,5 +396,6 @@ export async function runRegressionFixesTests() {
     console.log('✓ Phase 2 Root Cause Fixes & Edge Cases tests passed!');
   } finally {
     globalThis.fetch = originalFetch;
+    globalThis.document = originalDocument;
   }
 }

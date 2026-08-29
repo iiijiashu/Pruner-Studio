@@ -7,13 +7,17 @@ __pycache__/
 build/
 dist/
 *.spec
+!Pruner-Studio.spec
 
 # Local runtime state and credentials
+.instance.lock
 .auth_session.json
 auth_session.json
 session.json
 catalog.json
 operations.json
+pending-operations.json
+session.corrupt-*.json
 rules.local.json
 rules.json
 backup-*.json

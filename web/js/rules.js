@@ -161,9 +161,10 @@ class RulesViewManager {
     }
   }
 
-  async loadRules() {
+  async loadRules(isCurrent = () => true) {
     try {
       const res = await api.getRules();
+      if (!isCurrent()) return false;
       if (res.ok && res.data && Array.isArray(res.data.rules)) {
         state.set({ rules: res.data.rules });
       } else if (res.ok && Array.isArray(res.data)) {
@@ -195,8 +196,10 @@ class RulesViewManager {
         state.set({ rules: defaultRules });
       }
       this.render();
+      return true;
     } catch (err) {
-      console.warn('Failed to load rules:', err);
+      if (isCurrent()) console.warn('Failed to load rules:', err);
+      return false;
     }
   }
 

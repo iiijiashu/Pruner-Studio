@@ -15,7 +15,8 @@ class ApiClient {
       'Accept': 'application/json',
     };
 
-    if (options.body && typeof options.body === 'string') {
+    const method = String(options.method || 'GET').toUpperCase();
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
       defaultHeaders['Content-Type'] = 'application/json';
     }
 
@@ -39,15 +40,11 @@ class ApiClient {
         try {
           payload = JSON.parse(text);
         } catch {
-          payload = {
-            ok: response.ok,
-            data: text,
-            error: response.ok ? null : { code: 'HTTP_ERROR', message: `服务器返回状态码 ${response.status}` },
-          };
+          payload = null;
         }
       }
 
-      if (payload && typeof payload === 'object' && 'ok' in payload) {
+      if (payload && typeof payload === 'object' && typeof payload.ok === 'boolean') {
         if (!response.ok) {
           return {
             ok: false,
@@ -65,9 +62,11 @@ class ApiClient {
       }
 
       return {
-        ok: response.ok,
-        data: payload,
-        error: response.ok ? null : { code: 'HTTP_ERROR', message: `HTTP ${response.status}` },
+        ok: false,
+        data: null,
+        error: response.ok
+          ? { code: 'API_CONTRACT_INVALID', message: '服务器返回了无效的 API 响应。' }
+          : { code: 'HTTP_ERROR', message: `HTTP ${response.status}` },
       };
     } catch (err) {
       return {
@@ -162,6 +161,18 @@ class ApiClient {
         privacy,
       }),
     });
+  }
+
+  async getPendingOperations() {
+    return this.request('/api/operations/pending');
+  }
+
+  async reconcilePendingOperation(operationId) {
+    return this.request(`/api/operations/${encodeURIComponent(operationId)}/reconcile`, { method: 'POST' });
+  }
+
+  async ignorePendingOperation(operationId) {
+    return this.request(`/api/operations/${encodeURIComponent(operationId)}/ignore`, { method: 'POST' });
   }
 
   /**

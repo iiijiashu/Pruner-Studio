@@ -4,8 +4,12 @@ import json
 import os
 import tempfile
 import threading
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from .errors import AppError
 
 
 class JsonStore:
@@ -29,8 +33,18 @@ class JsonStore:
                     return json.load(handle)
             except FileNotFoundError:
                 return default
-            except (OSError, json.JSONDecodeError):
-                return default
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise AppError(
+                    "LOCAL_DATA_CORRUPT",
+                    f"本地数据文件 {name} 已损坏；原文件已保留，请先恢复或移走后再继续",
+                    500,
+                ) from exc
+            except OSError as exc:
+                raise AppError(
+                    "LOCAL_DATA_UNREADABLE",
+                    f"无法读取本地数据文件 {name}；未对其进行覆盖",
+                    500,
+                ) from exc
 
     def write(self, name: str, value: Any) -> None:
         target = self.path(name)
@@ -57,6 +71,17 @@ class JsonStore:
             except FileNotFoundError:
                 pass
 
+    def quarantine(self, name: str) -> Path | None:
+        target = self.path(name)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        quarantined = target.with_name(f"{target.stem}.corrupt-{stamp}-{uuid.uuid4().hex[:8]}.json")
+        with self._lock:
+            try:
+                os.replace(target, quarantined)
+            except FileNotFoundError:
+                return None
+        return quarantined
+
 
 class SessionStore:
     FILE_NAME = "session.json"
@@ -65,9 +90,21 @@ class SessionStore:
         self.store = store
 
     def load_cookie(self) -> str | None:
-        value = self.store.read(self.FILE_NAME, {})
+        missing = object()
+        try:
+            value = self.store.read(self.FILE_NAME, missing)
+        except AppError as exc:
+            if exc.code != "LOCAL_DATA_CORRUPT":
+                raise
+            self.store.quarantine(self.FILE_NAME)
+            return None
+        if value is missing:
+            return None
         cookie = value.get("cookie") if isinstance(value, dict) else None
-        return cookie if isinstance(cookie, str) and cookie else None
+        if not isinstance(cookie, str) or not cookie or "\r" in cookie or "\n" in cookie:
+            self.store.quarantine(self.FILE_NAME)
+            return None
+        return cookie
 
     def save_cookie(self, cookie: str) -> None:
         if not cookie or "\r" in cookie or "\n" in cookie:
