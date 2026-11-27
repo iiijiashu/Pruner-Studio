@@ -1,0 +1,178 @@
+name: Release (Windows & Android)
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    outputs:
+      signed: ${{ steps.android_build.outputs.signed }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Ensure Gradle wrapper is executable
+        run: chmod +x ./gradlew
+      - name: Verify Android unit tests, lint and build APK
+        env:
+          PRUNER_ANDROID_KEYSTORE_BASE64: ${{ secrets.PRUNER_ANDROID_KEYSTORE_BASE64 }}
+          PRUNER_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.PRUNER_ANDROID_KEYSTORE_PASSWORD }}
+          PRUNER_ANDROID_KEY_ALIAS: ${{ secrets.PRUNER_ANDROID_KEY_ALIAS }}
+          PRUNER_ANDROID_KEY_PASSWORD: ${{ secrets.PRUNER_ANDROID_KEY_PASSWORD }}
+        id: android_build
+        run: |
+          set -euo pipefail
+          KEYSTORE_FILE=""
+          SIGNING_CONFIGURED="0"
+          cleanup() {
+            if [ -n "$KEYSTORE_FILE" ] && [ -f "$KEYSTORE_FILE" ]; then
+              rm -f "$KEYSTORE_FILE"
+            fi
+          }
+          trap cleanup EXIT
+          B64_CLEAN="$(printf '%s' "${PRUNER_ANDROID_KEYSTORE_BASE64:-}" | tr -d '[:space:]')"
+          HAS_B64=0; HAS_STOREPASS=0; HAS_ALIAS=0; HAS_KEYPASS=0
+          [ -n "$B64_CLEAN" ] && HAS_B64=1
+          [ -n "${PRUNER_ANDROID_KEYSTORE_PASSWORD:-}" ] && HAS_STOREPASS=1
+          [ -n "${PRUNER_ANDROID_KEY_ALIAS:-}" ] && HAS_ALIAS=1
+          [ -n "${PRUNER_ANDROID_KEY_PASSWORD:-}" ] && HAS_KEYPASS=1
+          SET_COUNT=$((HAS_B64 + HAS_STOREPASS + HAS_ALIAS + HAS_KEYPASS))
+          if [ "$SET_COUNT" -eq 4 ]; then
+            umask 077
+            KEYSTORE_FILE="$(mktemp --suffix=.jks "${RUNNER_TEMP:-/tmp}/pruner-release-keystore.XXXXXX")"
+            printf '%s' "$B64_CLEAN" | base64 --decode > "$KEYSTORE_FILE"
+            if [ ! -s "$KEYSTORE_FILE" ]; then
+              echo "::error::Decoded Android release signing keystore is empty."
+              exit 1
+            fi
+            unset PRUNER_ANDROID_KEYSTORE_BASE64 B64_CLEAN
+            export PRUNER_ANDROID_KEYSTORE_PATH="$KEYSTORE_FILE"
+            SIGNING_CONFIGURED="1"
+            echo "Android release signing keystore configured."
+          else
+            if [ "$SET_COUNT" -gt 0 ]; then
+              echo "::warning::Partial Android release signing secrets detected ($SET_COUNT/4 configured); falling back to unsigned release + debug APK."
+            else
+              echo "Android release signing secrets not configured; building unsigned release + debug fallback."
+            fi
+            unset PRUNER_ANDROID_KEYSTORE_BASE64 B64_CLEAN PRUNER_ANDROID_KEYSTORE_PATH PRUNER_ANDROID_KEYSTORE_PASSWORD PRUNER_ANDROID_KEY_ALIAS PRUNER_ANDROID_KEY_PASSWORD
+          fi
+          echo "signed=$SIGNING_CONFIGURED" >> "$GITHUB_OUTPUT"
+          ./gradlew testDebugUnitTest lintDebug assembleRelease assembleDebug --no-daemon --stacktrace
+          if [ "$SIGNING_CONFIGURED" = "1" ] && [ ! -f app/build/outputs/apk/release/app-release.apk ]; then
+            echo "::error::Android release signing was configured, but app/build/outputs/apk/release/app-release.apk was not produced."
+            exit 1
+          fi
+      - name: Stage Android APK artifact
+        if: steps.android_build.outputs.signed == '1'
+        run: |
+          mkdir -p ../dist-android
+          cp app/build/outputs/apk/release/app-release.apk ../dist-android/
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: steps.android_build.outputs.signed == '1'
+        with:
+          name: android-apk
+          path: dist-android/*.apk
+
+  release:
+    needs: [build-android]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - name: Install
+        shell: pwsh
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: --no-binary=proxy_tools -r requirements-build.lock
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m pip install --no-build-isolation --no-deps -e .
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m pip install pytest ruff
+      - name: Python lint and syntax
+        shell: pwsh
+        run: |
+          ruff check src tests/backend scripts
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m compileall -q src tests/backend scripts
+      - name: Backend tests (pytest including Stage 3 LAN sync)
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = "src;tests/backend"
+          python -m pytest -v
+      - name: Frontend tests (all suites including Stage 3)
+        shell: pwsh
+        run: |
+          node tests/frontend/run_all.js
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          node tests/frontend/scan_ui.js
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Get-ChildItem -LiteralPath web/js -Filter *.js -File | ForEach-Object { node --check $_.FullName; if ($LASTEXITCODE) { exit $LASTEXITCODE } }
+      - name: Build one-file executable
+        shell: pwsh
+        run: .\scripts\build-windows.ps1
+      - name: Verify PE manifest, bundled assets and headless runtime
+        run: .\.venv\Scripts\python.exe scripts/verify-windows.py
+      - uses: actions/download-artifact@v4
+        if: needs.build-android.outputs.signed == '1'
+        with:
+          name: android-apk
+          path: dist/android
+      - name: Package installer, portable archive, and Android APK
+        shell: pwsh
+        run: |
+          $version = .\.venv\Scripts\python.exe -c "from pruner_studio.version import __version__; print(__version__)"
+          if ($LASTEXITCODE -or $version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid version" }
+          $tag = "v$version"
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -cne $tag) { throw "Tag does not match source version" }
+          if (git tag --list $tag) {
+            $tagCommit = git rev-list -1 $tag
+            if ($LASTEXITCODE -or $tagCommit -ne (git rev-parse HEAD)) { throw "Existing tag points to another revision" }
+          }
+          "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+          $base = "Pruner-Studio-$tag-win64"
+          Compress-Archive -LiteralPath dist/Pruner-Studio.exe,scripts/install-start-menu.ps1,scripts/README-Windows.txt -DestinationPath "dist/$base-portable.zip"
+          $iscc = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Inno Setup 6\ISCC.exe'
+          & $iscc "/DAppVersion=$version" scripts/Pruner-Studio.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $apkSource = if (Test-Path -LiteralPath dist/android) { Get-Item -LiteralPath dist/android/app-release.apk }
+          $releaseAssets = @("dist/$base-portable.zip", "dist/$base-setup.exe")
+          if ($apkSource) {
+            $apkTarget = "dist/Pruner-Studio-$tag-android.apk"
+            Copy-Item -LiteralPath $apkSource.FullName -Destination $apkTarget -Force
+            $releaseAssets += $apkTarget
+          }
+          Get-FileHash -Algorithm SHA256 -LiteralPath $releaseAssets | ForEach-Object {
+            "$($_.Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($_.Path))"
+          } | Set-Content dist/SHA256SUMS.txt -Encoding ascii
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $base = "dist/Pruner-Studio-$env:RELEASE_TAG-win64"
+          $assets = @("$base-portable.zip", "$base-setup.exe", "dist/SHA256SUMS.txt")
+          $apkTarget = "dist/Pruner-Studio-$env:RELEASE_TAG-android.apk"
+          if (Test-Path -LiteralPath $apkTarget) { $assets += $apkTarget }
+          gh release create $env:RELEASE_TAG @assets --target $env:GITHUB_SHA --title "Pruner Studio $env:RELEASE_TAG" --notes-file scripts/README-Windows.txt

@@ -1,6 +1,6 @@
 """Canonical Pruner Studio release version."""
 
-__version__ = "0.2.0"
+__version__ = "0.4.0"
 
 
 def windows_version_tuple() -> tuple[int, int, int, int]:

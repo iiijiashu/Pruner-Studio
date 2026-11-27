@@ -5,18 +5,17 @@
 
 @import url("./base.css");
 @import url("./components.css");
+@import url("./discover.css");
 @import url("./deck.css");
 @import url("./catalog.css");
 @import url("./rules.css");
 @import url("./cloud.css");
+@import url("./search.css");
 @import url("./player.css");
+@import url("./stage.css");
 
-/* Fade Animations */
+/* Crisp zero-blur panel presentation (avoid full-subtree opacity GPU rasterization on HiDPI WebView2) */
 .animate-fade {
-  animation: fadeIn var(--transition-fast) ease forwards;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  animation: none;
+  opacity: 1;
 }

@@ -1,30 +1,117 @@
 /**
  * Pruner Studio - Rule Engine & Catalog Rules Workshop Drawer
- * Evaluates custom rules, runs simulations against catalog, previews matches,
- * stages selections for batching, and generates cloud playlists (never direct cloud writes).
+ * Evaluates custom rules with precompiled RegExp caching, runs simulations against catalog,
+ * previews matches, and stages selections for batching (never direct cloud writes).
  */
 import { api } from './api.js';
 import { state } from './state.js';
 import { toast } from './toast.js';
 import { modal } from './modal.js';
-import { createElement, formatArtists, formatDuration } from './utils.js';
+import { getTrackKey, durationSeconds, createElement, formatArtists, formatDuration } from './utils.js';
+import { createIcon } from './icons.js';
+
+const VALID_DECIMAL_RE = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/;
+const portableEscape = String.raw`\\(?:[dDsSwWbBfnrtv\\.^$|?*+(){}\[\]\/-]|x[0-9A-Fa-f]{2}|u(?:[0-9A-CE-Fa-ce-f][0-9A-Fa-f]{3}|[Dd][0-7][0-9A-Fa-f]{2}))`;
+const portableClass = String.raw`\[\^?(?:${portableEscape}|[^\]\\])+\]`;
+const PORTABLE_TOKEN = new RegExp(String.raw`(?:\\[1-9][0-9]*|${portableEscape}|${portableClass}|\(\?[:=!]|\((?!\?)|\{[0-9]+(?:,[0-9]*)?\}|[^\\\[\](){}]|\))`, 'uy');
+
+function portableRegex(pattern) {
+  const groups = [];
+  const closed = new Set();
+  let captureCount = 0;
+  let pos = 0;
+  let previous = '';
+  while (pos < pattern.length) {
+    PORTABLE_TOKEN.lastIndex = pos;
+    const match = PORTABLE_TOKEN.exec(pattern);
+    if (!match) return false;
+    pos = PORTABLE_TOKEN.lastIndex;
+    let part = match[0];
+    if (part.startsWith('(')) {
+      if (part === '(') captureCount++;
+      groups.push([part, captureCount]);
+    } else if (part === ')') {
+      if (!groups.length) return false;
+      const [group, index] = groups.pop();
+      if (group === '(') closed.add(index);
+      part = ['(?=', '(?!'].includes(group) ? 'assertion' : ')';
+    } else if (/^\\[1-9]/.test(part)) {
+      if (part.length > 3 || !closed.has(Number(part.slice(1)))) return false;
+    } else if (part.startsWith('{') || ['*', '+', '?'].includes(part)) {
+      if (previous === 'assertion' || (part === '+' && previous === 'quantifier')) return false;
+      if (part.startsWith('{') && part.match(/[0-9]+/g).some(n => Number(n) >= 4294967295)) return false;
+      part = 'quantifier';
+    } else if (['[]', '[^]', '\\-'].includes(part)) return false;
+    previous = part;
+  }
+  return !groups.length;
+}
+
+const MAX_REGEX_CACHE = 256;
 
 export class RuleEngine {
+  static _regexCache = new Map();
+
+  /**
+   * Returns a cached compiled case-insensitive RegExp (or null for invalid patterns).
+   * Prevents recompiling regexes per-song across 10k+ track catalogs.
+   * @param {string} pattern
+   * @returns {RegExp|null}
+   */
+  static getCompiledRegex(pattern) {
+    const key = String(pattern ?? '');
+    if (this._regexCache.has(key)) {
+      return this._regexCache.get(key);
+    }
+    let compiled = null;
+    try {
+      if (portableRegex(key)) compiled = new RegExp(key, 'iu');
+    } catch {
+      compiled = null;
+    }
+    if (this._regexCache.size >= MAX_REGEX_CACHE) {
+      const oldest = this._regexCache.keys().next().value;
+      this._regexCache.delete(oldest);
+    }
+    this._regexCache.set(key, compiled);
+    return compiled;
+  }
+
   /**
    * Evaluate a single clause against a song.
    * @param {Song} song
    * @param {RuleClause} clause
    * @returns {boolean}
    */
+  static validClause(clause) {
+    if (!clause || !['string', 'number', 'boolean'].includes(typeof clause.value) || String(clause.value).trim() === '') return false;
+    const {field, operator, value} = clause;
+    const equality = ['equals', 'not_equals'].includes(operator);
+    if (field === 'liked') return equality && ['true', 'false'].includes(String(value).toLowerCase());
+    if (typeof value === 'boolean') return false;
+    if (field === 'duration') {
+      if (!(equality || ['lt', 'lte', 'gt', 'gte'].includes(operator))) return false;
+      if (typeof value === 'number') return Number.isFinite(value);
+      return typeof value === 'string' && VALID_DECIMAL_RE.test(value) && Number.isFinite(Number(value));
+    }
+    return ['title', 'artist', 'artists', 'album', 'availability'].includes(field) &&
+      (equality || ['contains', 'not_contains', 'starts_with', 'ends_with'].includes(operator) ||
+       (operator === 'regex' && !!this.getCompiledRegex(value)));
+  }
+
   static evaluateClause(song, clause) {
-    if (!song || !clause) return false;
+    if (!song || !this.validClause(clause)) return false;
+    if (clause.field === 'liked') {
+      const liked = state.isSongLiked(song) || song.liked === true;
+      return (liked === (String(clause.value).toLowerCase() === 'true')) === (clause.operator === 'equals');
+    }
 
     let targetVal = song[clause.field];
     if (clause.field === 'artist' || clause.field === 'artists') {
       targetVal = formatArtists(song.artists);
     }
-    if (clause.field === 'duration' && Number(targetVal) > 10000) {
-      targetVal = Number(targetVal) / 1000;
+    if (clause.field === 'duration') {
+      targetVal = durationSeconds(song);
     }
 
     const op = clause.operator;
@@ -63,13 +150,10 @@ export class RuleEngine {
         return strTarget.startsWith(strClause);
       case 'ends_with':
         return strTarget.endsWith(strClause);
-      case 'regex':
-        try {
-          const regex = new RegExp(String(clauseVal), 'i');
-          return regex.test(String(targetVal || ''));
-        } catch {
-          return false;
-        }
+      case 'regex': {
+        const regex = this.getCompiledRegex(clauseVal);
+        return regex ? regex.test(String(targetVal || '')) : false;
+      }
       default:
         return false;
     }
@@ -83,9 +167,10 @@ export class RuleEngine {
    */
   static evaluateRule(song, rule) {
     if (!rule || !rule.enabled) return false;
-    if (!rule.match_clauses || rule.match_clauses.length === 0) return false;
+    if (!Array.isArray(rule.match_clauses) || rule.match_clauses.length === 0) return false;
 
-    return rule.match_clauses.every(clause => this.evaluateClause(song, clause));
+    const matches = clause => this.evaluateClause(song, clause);
+    return rule.match_mode === 'any' ? rule.match_clauses.some(matches) : rule.match_clauses.every(matches);
   }
 
   /**
@@ -107,13 +192,16 @@ export class RuleEngine {
    */
   static runSimulation(catalog, rules) {
     const ruleMatches = new Map();
-    const allMatchedIds = new Set();
+    const seen = new Set();
     const allMatchedSongs = [];
 
-    const activeRules = rules.filter(r => r.enabled);
+    const activeRules = (rules || []).filter(r => r.enabled);
     activeRules.forEach(r => ruleMatches.set(r.id, []));
 
-    for (const song of catalog) {
+    for (const song of (catalog || [])) {
+      const key = getTrackKey(song);
+      if (seen.has(key)) continue;
+      seen.add(key);
       let songMatched = false;
       for (const rule of activeRules) {
         if (this.evaluateRule(song, rule)) {
@@ -122,7 +210,6 @@ export class RuleEngine {
         }
       }
       if (songMatched) {
-        allMatchedIds.add(song.id);
         allMatchedSongs.push(song);
       }
     }
@@ -130,7 +217,7 @@ export class RuleEngine {
     return {
       ruleMatches,
       allMatchedSongs,
-      totalCount: allMatchedIds.size,
+      totalCount: allMatchedSongs.length,
     };
   }
 }
@@ -150,6 +237,7 @@ class RulesViewManager {
     const drawer = document.getElementById('rules-drawer-panel');
     if (drawer) {
       drawer.classList.add('open');
+      state.set({ isRulesDrawerOpen: true });
       this.render();
     }
   }
@@ -158,6 +246,7 @@ class RulesViewManager {
     const drawer = document.getElementById('rules-drawer-panel');
     if (drawer) {
       drawer.classList.remove('open');
+      state.set({ isRulesDrawerOpen: false });
     }
   }
 
@@ -205,13 +294,12 @@ class RulesViewManager {
 
   render() {
     if (!this.container) return;
-    this.container.textContent = ''; // Safe clear
+    this.container.textContent = '';
 
     const rules = state.get('rules') || [];
-    const catalog = state.get('catalog') || [];
+    const catalog = state.getRuleEvaluationPool();
     const sim = RuleEngine.runSimulation(catalog, rules);
 
-    // Update Simulation Summary
     const simSummaryEl = document.getElementById('rules-sim-summary');
     if (simSummaryEl) {
       simSummaryEl.textContent = `已命中 ${sim.totalCount} 首歌曲 (共 ${rules.filter(r => r.enabled).length} 条启用规则 / 曲库 ${catalog.length} 首)`;
@@ -226,19 +314,17 @@ class RulesViewManager {
           createElement('button', {
             className: 'btn btn-primary btn-sm',
             text: '新建第一条规则',
-            events: { click: () => this.openRuleEditor(null) }
-          })
-        ]
+            events: { click: () => this.openRuleEditor(null) },
+          }),
+        ],
       });
       this.container.appendChild(emptyEl);
       return;
     }
 
-    // Render Rule Cards
     rules.forEach(rule => {
       const matchedSongs = sim.ruleMatches.get(rule.id) || [];
 
-      // Switch
       const switchInput = createElement('input', {
         attributes: { type: 'checkbox', 'aria-label': `启用规则 ${rule.name}` },
         events: {
@@ -250,40 +336,35 @@ class RulesViewManager {
               toast.error('保存失败', '规则状态修改未成功同步。');
             }
             this.render();
-          }
-        }
+          },
+        },
       });
       if (rule.enabled) switchInput.checked = true;
 
       const switchSlider = createElement('span', { className: 'switch-slider' });
       const switchLabel = createElement('label', { className: 'switch' }, [switchInput, switchSlider]);
 
-      // Clauses Tags
-      const clauseTags = (rule.match_clauses || []).map(c => {
-        return createElement('span', {
-          className: 'clause-tag',
-          text: `${c.field} ${c.operator} ${c.value}`
-        });
-      });
+      const clauseTags = (rule.match_clauses || []).map(c => createElement('span', {
+        className: 'clause-tag',
+        text: `${c.field} ${c.operator} ${c.value}`,
+      }));
 
       if (rule.output_playlist_name) {
         clauseTags.push(createElement('span', {
           className: 'rule-output-tag',
-          text: `输出目标: ${rule.output_playlist_name}`
+          text: `输出目标: ${rule.output_playlist_name}`,
         }));
       }
 
-      // Match Count Badge
       const matchCountBadge = createElement('span', {
         className: `badge ${matchedSongs.length > 0 ? 'badge-warning' : 'badge-muted'}`,
-        text: `${matchedSongs.length} 首命中`
+        text: `${matchedSongs.length} 首命中`,
       });
 
-      // Action buttons: Preview, Stage into Batch, Edit, Delete (Zero direct cloud creation)
       const previewBtn = createElement('button', {
         className: 'btn btn-ghost btn-sm',
         text: '预览',
-        events: { click: () => this.previewMatchedSongs(rule, matchedSongs) }
+        events: { click: () => this.previewMatchedSongs(rule, matchedSongs) },
       });
 
       const stageBtn = createElement('button', {
@@ -298,35 +379,35 @@ class RulesViewManager {
             }
             let stagedCount = 0;
             let skippedCount = 0;
+            let already = 0;
             matchedSongs.forEach(s => {
               const resolved = state.resolveDestructiveAction(s, s.source_playlist_id);
               if (resolved.valid) {
-                state.stageBatchAction(s, resolved.action, resolved.playlistId, resolved.targetName);
-                stagedCount++;
+                const targetTk = getTrackKey(s) || String(s.id);
+                if (state.stageBatchAction(s, resolved.action, resolved.playlistId, resolved.targetName)) stagedCount++;
+                else if ((state.get('batchQueue') || []).some(row => (getTrackKey(row.song) || String(row.song.id)) === targetTk &&
+                  String(row.playlistId) === String(resolved.playlistId) && row.action === resolved.action)) already++;
+                else skippedCount++;
               } else {
                 skippedCount++;
               }
             });
 
-            if (skippedCount > 0) {
-              toast.warning('部分曲目已跳过', `已将 ${stagedCount} 首加入待提交队列，${skippedCount} 首本地导入/无远端目标曲目被跳过。`);
-            } else {
-              toast.success('已加入待处理队列', `已将 ${stagedCount} 首命中歌曲加入待提交队列。`);
-            }
-          }
-        }
+            toast.info('批处理结果', `新增 ${stagedCount} 首 · 已在队列 ${already} 首 · 跳过 ${skippedCount} 首`);
+          },
+        },
       });
 
       const editBtn = createElement('button', {
         className: 'btn btn-ghost btn-sm',
         text: '编辑',
-        events: { click: () => this.openRuleEditor(rule) }
+        events: { click: () => this.openRuleEditor(rule) },
       });
 
       const deleteBtn = createElement('button', {
         className: 'btn btn-ghost btn-sm text-danger',
         text: '删除',
-        events: { click: () => this.deleteRule(rule.id) }
+        events: { click: () => this.deleteRule(rule.id) },
       });
 
       const card = createElement('div', {
@@ -343,19 +424,22 @@ class RulesViewManager {
                     className: 'rule-name-row',
                     children: [
                       createElement('span', { className: 'rule-name', text: rule.name }),
-                      matchCountBadge
-                    ]
+                      matchCountBadge,
+                    ],
                   }),
-                  createElement('div', { className: 'rule-clauses-preview' }, clauseTags)
-                ]
-              })
-            ]
+                  createElement('div', { className: 'rule-clauses-preview' }, clauseTags),
+                ],
+              }),
+            ],
           }),
           createElement('div', {
             className: 'rule-card-actions',
-            children: [previewBtn, stageBtn, editBtn, deleteBtn]
-          })
-        ]
+            children: [previewBtn, createElement('button', {className: 'btn btn-secondary btn-sm', text: '生成歌单',
+              attributes: {disabled: matchedSongs.length ? null : 'disabled'},
+              events: {click: () => state.emit('playlist:create-from-rule', { songs: matchedSongs, name: rule.output_playlist_name || rule.name })} }),
+              stageBtn, editBtn, deleteBtn],
+          }),
+        ],
       });
 
       this.container.appendChild(card);
@@ -384,15 +468,13 @@ class RulesViewManager {
 
   renderClauseBuilders(container) {
     if (!container) return;
-    container.textContent = ''; // Safe clear
+    container.textContent = '';
 
     (this.currentEditingRule.match_clauses || []).forEach((clause, index) => {
       const fieldSelect = createElement('select', {
         className: 'clause-select',
         attributes: { 'aria-label': '匹配字段' },
-        events: {
-          change: (e) => { clause.field = e.target.value; }
-        }
+        events: { change: (e) => { clause.field = e.target.value; } },
       });
       [
         { val: 'duration', label: '时长 (秒)' },
@@ -410,9 +492,7 @@ class RulesViewManager {
       const opSelect = createElement('select', {
         className: 'clause-select',
         attributes: { 'aria-label': '匹配操作' },
-        events: {
-          change: (e) => { clause.operator = e.target.value; }
-        }
+        events: { change: (e) => { clause.operator = e.target.value; } },
       });
       [
         { val: 'equals', label: '等于' },
@@ -434,27 +514,25 @@ class RulesViewManager {
 
       const valueInput = createElement('input', {
         className: 'clause-input',
-        attributes: { type: 'text', value: String(clause.value || ''), placeholder: '匹配值' },
-        events: {
-          input: (e) => { clause.value = e.target.value; }
-        }
+        attributes: { type: 'text', value: String(clause.value ?? ''), placeholder: '匹配值' },
+        events: { input: (e) => { clause.value = e.target.value; } },
       });
 
       const removeBtn = createElement('button', {
-        className: 'btn btn-ghost btn-sm',
-        text: '×',
-        attributes: { title: '删除此条件' },
+        className: 'btn btn-ghost btn-icon btn-sm',
+        attributes: { title: '删除此条件', 'aria-label': '删除此条件' },
         events: {
           click: () => {
             this.currentEditingRule.match_clauses.splice(index, 1);
             this.renderClauseBuilders(container);
-          }
-        }
+          },
+        },
+        children: [createIcon('close', { size: 14 })],
       });
 
       const row = createElement('div', {
         className: 'clause-builder-row',
-        children: [fieldSelect, opSelect, valueInput, removeBtn]
+        children: [fieldSelect, opSelect, valueInput, removeBtn],
       });
 
       container.appendChild(row);
@@ -462,13 +540,13 @@ class RulesViewManager {
 
     const addClauseBtn = createElement('button', {
       className: 'btn btn-secondary btn-sm',
-      text: '+ 添加匹配条件',
       events: {
         click: () => {
           this.currentEditingRule.match_clauses.push({ field: 'title', operator: 'contains', value: '' });
           this.renderClauseBuilders(container);
-        }
-      }
+        },
+      },
+      children: [createIcon('plus', { size: 14 }), ' 添加匹配条件'],
     });
 
     container.appendChild(addClauseBtn);
@@ -482,6 +560,10 @@ class RulesViewManager {
     if (nameInput) this.currentEditingRule.name = nameInput.value.trim() || '未命名规则';
     if (outputInput) this.currentEditingRule.output_playlist_name = outputInput.value.trim();
 
+    if (!this.currentEditingRule.match_clauses?.length || !this.currentEditingRule.match_clauses.every(c => RuleEngine.validClause(c))) {
+      toast.warning('无法保存规则', '请检查字段、匹配操作和值，红心状态填写 true 或 false。');
+      return;
+    }
     const previousRules = JSON.parse(JSON.stringify(state.get('rules') || []));
     const rules = [...(state.get('rules') || [])];
     const existingIndex = rules.findIndex(r => r.id === this.currentEditingRule.id);
@@ -528,7 +610,7 @@ class RulesViewManager {
     }
   }
 
-  previewMatchedSongs(rule, matchedSongs) {
+  previewMatchedSongs(rule, matchedSongs, page = 0) {
     const previewList = document.getElementById('rule-preview-songs-list');
     const previewTitle = document.getElementById('rule-preview-title');
 
@@ -537,14 +619,14 @@ class RulesViewManager {
     }
 
     if (previewList) {
-      previewList.textContent = ''; // Safe clear
+      previewList.textContent = '';
       if (matchedSongs.length === 0) {
         previewList.appendChild(createElement('div', {
           className: 'empty-state',
-          children: [createElement('div', { className: 'empty-state-title', text: '当前无匹配歌曲' })]
+          children: [createElement('div', { className: 'empty-state-title', text: '当前无匹配歌曲' })],
         }));
       } else {
-        matchedSongs.slice(0, 100).forEach(song => {
+        matchedSongs.slice(page * 100, (page + 1) * 100).forEach(song => {
           const item = createElement('div', {
             className: 'preview-song-row',
             style: 'display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-subtle); font-size: var(--text-xs);',
@@ -552,18 +634,25 @@ class RulesViewManager {
               createElement('div', {
                 children: [
                   createElement('strong', { text: song.title || '未知曲目' }),
-                  createElement('span', { text: ` - ${formatArtists(song.artists)}`, style: 'color: var(--text-secondary); margin-left: 4px;' })
-                ]
+                  createElement('span', { text: ` - ${formatArtists(song.artists)}`, style: 'color: var(--text-secondary); margin-left: 4px;' }),
+                ],
               }),
-              createElement('span', { text: formatDuration(song.duration), style: 'color: var(--text-muted);' })
-            ]
+              createElement('span', { text: formatDuration(song), style: 'color: var(--text-muted);' }),
+            ],
           });
           previewList.appendChild(item);
         });
       }
     }
 
-    modal.open('#rule-preview-modal');
+    if (previewList && matchedSongs.length > 100) {
+      for (const [label, target] of [['上一页', page - 1], ['下一页', page + 1]]) {
+        previewList.appendChild(createElement('button', {className: 'btn btn-ghost', text: label,
+          attributes: {disabled: target < 0 || target * 100 >= matchedSongs.length ? 'disabled' : null},
+          events: {click: () => this.previewMatchedSongs(rule, matchedSongs, target)} }));
+      }
+    }
+    if (modal.activeModal?.id !== 'rule-preview-modal') modal.open('#rule-preview-modal');
   }
 }
 

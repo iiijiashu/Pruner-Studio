@@ -1,0 +1,13 @@
+<resources>
+    <color name="launcher_background">#111215</color>
+    <color name="window_paper_background">#F3EDE2</color>
+    <style name="PrunerHost" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_paper_background</item>
+        <item name="android:fontFamily">sans</item>
+    </style>
+    <style name="Theme.Pruner.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/window_paper_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_pruner</item>
+        <item name="postSplashScreenTheme">@style/PrunerHost</item>
+    </style>
+</resources>

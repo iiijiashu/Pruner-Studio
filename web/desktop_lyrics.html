@@ -1,0 +1,1363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pruner Studio - 桌面悬浮歌词</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='2' y='2' width='60' height='60' rx='15' fill='%23141518' stroke='%23d4d6dc' stroke-opacity='0.24' stroke-width='2'/%3E%3Ccircle cx='32' cy='32' r='20' fill='none' stroke='%23f5f5f7' stroke-opacity='0.88' stroke-width='2.6' stroke-dasharray='86 40' transform='rotate(-25 32 32)'/%3E%3Ccircle cx='32' cy='32' r='13.5' fill='none' stroke='%2362a368' stroke-width='2.8' stroke-dasharray='58 27' transform='rotate(130 32 32)'/%3E%3Cpath d='M28 24.8c0-1.4 1.5-2.3 2.7-1.6l12.2 7.2c1.2.7 1.2 2.5 0 3.2l-12.2 7.2c-1.2.7-2.7-.2-2.7-1.6V24.8z' fill='%23f5f5f7'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      --dl-font-size: 28px;
+      --dl-font-weight: 700;
+      --dl-shadow-strength: 1;
+      --dl-played: #62a368;
+      --dl-highlight: #a8e2ad;
+      --dl-unplayed: #f5f5f7;
+      --dl-bg-opacity: 0;
+      --dl-align: center;
+      --dl-danger: #df584c;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      font-family: "Segoe UI Variable Text", "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+      color: var(--dl-unplayed);
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .floating-shell {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      padding: 6px 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: 0;
+      overflow: hidden;
+      cursor: grab;
+      transition: background-color 150ms ease, box-shadow 150ms ease;
+    }
+
+    .floating-shell.is-locked {
+      cursor: default;
+    }
+
+    /* Borderless (default): zero slab when idle, subtle hairline frame + corner grips on hover */
+    .floating-shell[data-surface="borderless"] {
+      background: rgba(16, 17, 22, calc(var(--dl-bg-opacity, 0) * 0.85));
+    }
+
+    .floating-shell[data-surface="borderless"]:not(.is-locked):hover,
+    .floating-shell[data-surface="borderless"]:not(.is-locked).is-menu-open {
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+    }
+
+    .floating-shell[data-surface="borderless"][data-preset="light_desktop_ink"]:not(.is-locked):hover,
+    .floating-shell[data-surface="borderless"][data-preset="light_desktop_ink"]:not(.is-locked).is-menu-open {
+      box-shadow: inset 0 0 0 1px rgba(24, 26, 31, 0.28);
+    }
+
+    /* Pill mode: content-hugging compact frosted dark/light capsule */
+    .floating-shell[data-surface="pill"] .dl-surface-card {
+      background-color: rgba(16, 18, 24, max(0.56, var(--dl-bg-opacity, 0)));
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 14px;
+      padding: 8px 22px;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.16),
+        0 8px 24px rgba(0, 0, 0, 0.36);
+    }
+
+    .floating-shell[data-surface="pill"][data-preset="light_desktop_ink"] .dl-surface-card {
+      background-color: rgba(250, 250, 248, max(0.72, var(--dl-bg-opacity, 0)));
+      border-color: rgba(24, 26, 31, 0.16);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.9),
+        0 6px 20px rgba(0, 0, 0, 0.14);
+    }
+
+    /* Acrylic mode: translucent backing paired with Win11 DWM DWMSBT_TRANSIENTWINDOW */
+    .floating-shell[data-surface="acrylic"] {
+      background-color: rgba(16, 18, 24, max(0.24, var(--dl-bg-opacity, 0)));
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+      border-radius: 10px;
+    }
+
+    .floating-shell[data-surface="acrylic"][data-preset="light_desktop_ink"] {
+      background-color: rgba(248, 248, 246, max(0.32, var(--dl-bg-opacity, 0)));
+      box-shadow: inset 0 0 0 1px rgba(24, 26, 31, 0.14);
+    }
+
+    .floating-shell[data-game-mode="true"] .floating-controls,
+    .floating-shell[data-game-mode="true"] .dl-more-popover {
+      transition: none !important;
+      box-shadow: none !important;
+    }
+
+    .dl-surface-card {
+      max-width: calc(100% - 12px);
+      width: fit-content;
+      min-width: min(260px, calc(100% - 12px));
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+    }
+
+    .floating-shell[data-align="left"] .dl-surface-card {
+      align-self: flex-start;
+    }
+
+    .floating-shell[data-align="right"] .dl-surface-card {
+      align-self: flex-end;
+    }
+
+    .floating-controls[hidden],
+    .dl-more-popover[hidden] {
+      display: none !important;
+    }
+
+    .floating-shell.is-locked .floating-controls,
+    .floating-shell.is-locked .dl-more-popover,
+    .floating-shell.is-locked .dl-resize-handle {
+      visibility: hidden;
+      pointer-events: none !important;
+    }
+
+    /* 7-Button Compact Hover Toolbar */
+    .floating-controls {
+      position: absolute;
+      top: 4px;
+      left: 50%;
+      transform: translateX(-50%);
+      pointer-events: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      opacity: 0;
+      transition: opacity 140ms ease, transform 160ms cubic-bezier(0.22, 1.25, 0.36, 1);
+      z-index: 12;
+      padding: 3px 5px;
+      border-radius: 8px;
+      background: rgba(18, 19, 24, 0.86);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+      white-space: nowrap;
+    }
+
+    .floating-shell:not(.is-locked):hover .floating-controls,
+    .floating-shell:not(.is-locked).is-menu-open .floating-controls,
+    .floating-controls:has(:focus-visible) {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* Compact Secondary Toolbar Popover (inside window, zero bottom overflow) */
+    .dl-more-popover {
+      position: absolute;
+      top: 38px;
+      left: 50%;
+      transform: translateX(-50%);
+      max-width: calc(100% - 20px);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      border-radius: 8px;
+      background: rgba(18, 19, 24, 0.94);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.52);
+      z-index: 15;
+      white-space: nowrap;
+      overflow-x: auto;
+    }
+
+    .dl-more-sep {
+      width: 1px;
+      height: 16px;
+      background: rgba(255, 255, 255, 0.16);
+      flex-shrink: 0;
+    }
+
+    .dl-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      background: rgba(255, 255, 255, 0.06);
+      color: #f5f5f7;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms cubic-bezier(0.22, 1.25, 0.36, 1);
+    }
+
+    .dl-btn:hover {
+      background: rgba(255, 255, 255, 0.16);
+      border-color: rgba(255, 255, 255, 0.24);
+    }
+
+    .dl-btn:active {
+      transform: translateY(1px) scale(0.92);
+      background: rgba(255, 255, 255, 0.24);
+    }
+
+    .dl-btn.is-active,
+    .dl-btn[aria-pressed="true"] {
+      color: var(--dl-played);
+      background: rgba(98, 163, 104, 0.18);
+      border-color: rgba(98, 163, 104, 0.55);
+    }
+
+    .dl-btn-close:hover {
+      color: var(--dl-danger);
+      border-color: rgba(223, 88, 76, 0.55);
+      background: rgba(223, 88, 76, 0.14);
+    }
+
+    .dl-btn-text {
+      width: auto;
+      min-width: 24px;
+      padding: 0 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .dl-vol-slider {
+      width: 58px;
+      height: 4px;
+      appearance: none;
+      border-radius: 99px;
+      background: linear-gradient(90deg, var(--dl-played) var(--dl-vol-pct, 80%), rgba(255, 255, 255, 0.22) var(--dl-vol-pct, 80%));
+      cursor: pointer;
+      outline: none;
+      margin: 0 2px;
+      flex-shrink: 0;
+    }
+
+    .dl-vol-slider::-webkit-slider-thumb {
+      appearance: none;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Lyrics Typography & Viewport Safety Clamp */
+    .dl-content {
+      width: 100%;
+      max-width: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+      padding: 4px 10px;
+      text-align: var(--dl-align);
+      align-items: center;
+    }
+
+    .floating-shell[data-align="left"] .dl-content {
+      align-items: flex-start;
+      text-align: left;
+    }
+
+    .floating-shell[data-align="right"] .dl-content {
+      align-items: flex-end;
+      text-align: right;
+    }
+
+    .dl-row {
+      max-width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      padding: 0 4px;
+      mask-image: linear-gradient(90deg, transparent, black 4px, black calc(100% - 4px), transparent);
+      -webkit-mask-image: linear-gradient(90deg, transparent, black 4px, black calc(100% - 4px), transparent);
+      line-height: 1.24;
+      font-weight: var(--dl-font-weight, 700);
+      font-size: clamp(14px, var(--dl-font-size), calc(100vh * 0.36));
+      color: var(--dl-unplayed);
+    }
+
+    .floating-shell[data-mode="single"] .dl-row:not(.is-secondary) {
+      font-size: clamp(15px, var(--dl-font-size), calc(100vh * 0.56));
+    }
+
+    .dl-row.is-active-lrc {
+      color: var(--dl-played);
+    }
+
+    .dl-row.is-secondary {
+      font-size: clamp(12px, calc(var(--dl-font-size) * 0.62), calc(100vh * 0.25));
+      font-weight: 500;
+      opacity: 0.9;
+      color: var(--dl-unplayed);
+    }
+
+    .dl-row.is-hidden {
+      display: none;
+    }
+
+    /* Crisp multi-layer legibility shadow & stroke across white & dark backgrounds */
+    .floating-shell {
+      --dl-s: var(--dl-shadow-strength, 1);
+      --lyric-shadow:
+        0 1px 2px rgba(0, 0, 0, min(1, calc(0.86 * var(--dl-s)))),
+        0 2px 8px rgba(0, 0, 0, min(1, calc(0.45 * var(--dl-s))));
+    }
+
+    .floating-shell[data-preset="light_desktop_ink"] {
+      --lyric-shadow:
+        0 1px 2px rgba(255, 255, 255, min(1, calc(0.92 * var(--dl-s)))),
+        0 0 6px rgba(255, 255, 255, min(1, calc(0.7 * var(--dl-s))));
+    }
+
+    .floating-shell[data-preset="game_contrast"] {
+      --lyric-shadow: 0 1px 2px rgba(0, 0, 0, 0.98), 0 0 8px rgba(0, 0, 0, 0.85);
+    }
+
+    .floating-shell[data-preset="game_contrast"] .dl-row.is-plain,
+    .floating-shell[data-preset="game_contrast"] .dl-word-stroke {
+      -webkit-text-stroke: 1.5px rgba(0, 0, 0, 0.95);
+      paint-order: stroke fill;
+    }
+
+    .floating-shell[data-preset="neon_duo"] {
+      --lyric-shadow:
+        0 1px 2px rgba(0, 0, 0, min(1, calc(0.9 * var(--dl-s)))),
+        0 0 6px rgba(72, 229, 255, calc(0.32 * var(--dl-s)));
+    }
+
+    .dl-row.is-plain,
+    .dl-word-stroke {
+      text-shadow: var(--lyric-shadow);
+    }
+
+    [data-surface="borderless"] :is(.dl-row.is-plain, .dl-word-stroke) {
+      -webkit-text-stroke: 0.65px var(--dl-outline, rgba(0, 0, 0, 0.85));
+      paint-order: stroke fill;
+    }
+
+    [data-preset="light_desktop_ink"] { --dl-outline: rgba(255, 255, 255, 0.95); }
+
+    [data-stroke="true"] .dl-row.is-plain,
+    [data-stroke="true"] .dl-word-stroke {
+      -webkit-text-stroke: 1px rgba(0, 0, 0, 0.72);
+      paint-order: stroke fill;
+    }
+
+    [data-preset="light_desktop_ink"][data-stroke="true"] .dl-row.is-plain,
+    [data-preset="light_desktop_ink"][data-stroke="true"] .dl-word-stroke {
+      -webkit-text-stroke: 1px rgba(255, 255, 255, 0.86);
+    }
+
+    /* 8-Direction Resize Edges + Visible Corner L-Bracket Grips */
+    .dl-resize-handle {
+      position: absolute;
+      z-index: 9;
+      background: rgba(16, 17, 22, 0.01);
+      pointer-events: auto;
+    }
+
+    .dl-resize-n { top: 0; left: 12px; right: 12px; height: 6px; cursor: ns-resize; }
+    .dl-resize-s { bottom: 0; left: 12px; right: 12px; height: 6px; cursor: ns-resize; }
+    .dl-resize-w { left: 0; top: 12px; bottom: 12px; width: 6px; cursor: ew-resize; }
+    .dl-resize-e { right: 0; top: 12px; bottom: 12px; width: 6px; cursor: ew-resize; }
+    .dl-resize-nw { top: 0; left: 0; width: 12px; height: 12px; cursor: nwse-resize; }
+    .dl-resize-ne { top: 0; right: 0; width: 12px; height: 12px; cursor: nesw-resize; }
+    .dl-resize-sw { bottom: 0; left: 0; width: 12px; height: 12px; cursor: nesw-resize; }
+    .dl-resize-se { bottom: 0; right: 0; width: 12px; height: 12px; cursor: nwse-resize; }
+
+    .dl-resize-nw::after,
+    .dl-resize-ne::after,
+    .dl-resize-sw::after,
+    .dl-resize-se::after {
+      content: "";
+      position: absolute;
+      width: 7px;
+      height: 7px;
+      opacity: 0;
+      border-color: rgba(255, 255, 255, 0.72);
+      border-style: solid;
+      border-width: 0;
+      transition: opacity 130ms ease;
+    }
+
+    .floating-shell[data-preset="light_desktop_ink"] .dl-resize-corner::after {
+      border-color: rgba(24, 26, 31, 0.72);
+    }
+
+    .floating-shell:not(.is-locked):hover .dl-resize-corner::after,
+    .floating-shell:not(.is-locked).is-menu-open .dl-resize-corner::after {
+      opacity: 1;
+    }
+
+    .dl-resize-nw::after { top: 3px; left: 3px; border-top-width: 2px; border-left-width: 2px; }
+    .dl-resize-ne::after { top: 3px; right: 3px; border-top-width: 2px; border-right-width: 2px; }
+    .dl-resize-sw::after { bottom: 3px; left: 3px; border-bottom-width: 2px; border-left-width: 2px; }
+    .dl-resize-se::after { bottom: 3px; right: 3px; border-bottom-width: 2px; border-right-width: 2px; }
+
+    .dl-osd {
+      position: absolute;
+      top: 6px;
+      right: 14px;
+      z-index: 16;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 10px;
+      border-radius: 8px;
+      background: rgba(14, 16, 20, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      color: #f5f5f7;
+      font-size: 0.75rem;
+      font-weight: 600;
+      pointer-events: none;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+      transition: opacity 160ms ease;
+    }
+
+    .dl-osd.hidden {
+      opacity: 0;
+      visibility: hidden;
+    }
+
+    .dl-osd-track.hidden {
+      display: none;
+    }
+
+    .dl-osd-track {
+      width: 52px;
+      height: 4px;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, 0.18);
+      overflow: hidden;
+    }
+
+    .dl-osd-bar {
+      height: 100%;
+      width: 0%;
+      background: var(--dl-played);
+      border-radius: 99px;
+    }
+
+    #dl-error {
+      position: absolute;
+      bottom: 2px;
+      left: 10px;
+      background: rgba(50, 27, 27, 0.92);
+      color: #ffffff;
+      font-size: 0.75rem;
+      padding: 0 6px;
+      border-radius: 4px;
+      z-index: 16;
+    }
+
+    .dl-word {
+      position: relative;
+      display: inline-block;
+      white-space: pre;
+      --progress: 0%;
+    }
+
+    .dl-word-stroke {
+      display: inline-block;
+      color: transparent;
+      pointer-events: none;
+    }
+
+    .dl-word-fill {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      background-image: linear-gradient(
+        90deg,
+        var(--dl-played) 0%,
+        var(--dl-highlight) var(--progress, 0%),
+        var(--dl-unplayed) var(--progress, 0%),
+        var(--dl-unplayed) 100%
+      );
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: transparent;
+      text-shadow: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="dl-shell" class="floating-shell" data-stroke="false" data-align="center" data-surface="borderless" data-mode="double" data-preset="cinema_white" role="region" aria-label="桌面悬浮歌词">
+    <!-- 8-Edge Native Resize Grips -->
+    <div class="dl-resize-handle dl-resize-n dl-no-drag" data-resize-edge="top" aria-hidden="true"></div>
+    <div class="dl-resize-handle dl-resize-s dl-no-drag" data-resize-edge="bottom" aria-hidden="true"></div>
+    <div class="dl-resize-handle dl-resize-w dl-no-drag" data-resize-edge="left" aria-hidden="true"></div>
+    <div class="dl-resize-handle dl-resize-e dl-no-drag" data-resize-edge="right" aria-hidden="true"></div>
+    <div class="dl-resize-handle dl-resize-corner dl-resize-nw dl-no-drag" data-resize-edge="top-left" aria-hidden="true"></div>
+    <div class="dl-resize-handle dl-resize-corner dl-resize-ne dl-no-drag" data-resize-edge="top-right" aria-hidden="true"></div>
+    <div class="dl-resize-handle dl-resize-corner dl-resize-sw dl-no-drag" data-resize-edge="bottom-left" aria-hidden="true"></div>
+    <div class="dl-resize-handle dl-resize-corner dl-resize-se dl-no-drag" data-resize-edge="bottom-right" aria-hidden="true"></div>
+
+    <div id="dl-osd" class="dl-osd hidden" role="status" aria-live="polite">
+      <span id="dl-osd-text" class="dl-osd-text"></span>
+      <div id="dl-osd-track" class="dl-osd-track hidden">
+        <div id="dl-osd-bar" class="dl-osd-bar"></div>
+      </div>
+    </div>
+
+    <div class="dl-surface-card">
+      <div id="dl-content" class="dl-content">
+        <div id="dl-row-a" class="dl-row is-plain">Pruner Studio · 桌面歌词就绪</div>
+        <div id="dl-row-b" class="dl-row is-secondary is-plain">播放曲目后将实时同步当前歌词</div>
+      </div>
+    </div>
+
+    <!-- Streamlined 7-Action Hover Pill -->
+    <div class="floating-controls dl-no-drag" role="toolbar" aria-label="桌面歌词控制">
+      <button id="dl-prev-btn" class="dl-no-drag dl-btn" type="button" title="上一首" aria-label="上一首">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polygon points="19 20 9 12 19 4 19 20"></polygon>
+          <line x1="5" y1="5" x2="5" y2="19"></line>
+        </svg>
+      </button>
+      <button id="dl-play-btn" class="dl-no-drag dl-btn" type="button" title="播放 / 暂停" aria-label="播放或暂停">
+        <svg id="dl-play-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
+          <polygon points="7 5 19 12 7 19 7 5"></polygon>
+        </svg>
+      </button>
+      <button id="dl-next-btn" class="dl-no-drag dl-btn" type="button" title="下一首" aria-label="下一首">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polygon points="5 4 15 12 5 20 5 4"></polygon>
+          <line x1="19" y1="5" x2="19" y2="19"></line>
+        </svg>
+      </button>
+      <button id="dl-heart-btn" type="button" class="dl-no-drag dl-btn" title="喜欢" aria-label="喜欢">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 20 3.7 12a5.2 5.2 0 0 1 8.3-6 5.2 5.2 0 0 1 8.3 6Z"/></svg>
+      </button>
+      <button id="dl-lock-btn" type="button" class="dl-no-drag dl-btn" title="锁定穿透（可在系统托盘或 Ctrl+Alt+K 解锁）" aria-label="锁定穿透">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+          <path d="M8 11V7a4 4 0 0 1 8 0v4"></path>
+        </svg>
+      </button>
+      <button id="dl-more-btn" type="button" class="dl-no-drag dl-btn" title="样式、字号与对齐控制（或右键）" aria-label="更多样式与控制" aria-expanded="false">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="5" cy="12" r="1.5"></circle>
+          <circle cx="12" cy="12" r="1.5"></circle>
+          <circle cx="19" cy="12" r="1.5"></circle>
+        </svg>
+      </button>
+      <button id="dl-close-btn" class="dl-no-drag dl-btn dl-btn-close" type="button" title="关闭桌面歌词" aria-label="关闭桌面歌词">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Compact Secondary Controls Popover (collapsed by default) -->
+    <div id="dl-more-popover" class="dl-no-drag dl-more-popover" hidden role="dialog" aria-label="桌面歌词样式调节">
+      <button id="dl-font-minus-btn" type="button" class="dl-no-drag dl-btn dl-btn-text" title="缩小歌词字号 (Ctrl+滚轮)" aria-label="缩小歌词字号">A-</button>
+      <button id="dl-font-plus-btn" type="button" class="dl-no-drag dl-btn dl-btn-text" title="放大歌词字号 (Ctrl+滚轮)" aria-label="放大歌词字号">A+</button>
+      <button id="dl-minus-btn" type="button" class="dl-no-drag dl-btn dl-btn-text" title="歌词提前半秒" aria-label="歌词提前半秒">−½</button>
+      <button id="dl-plus-btn" type="button" class="dl-no-drag dl-btn dl-btn-text" title="歌词延后半秒" aria-label="歌词延后半秒">+½</button>
+      <span class="dl-more-sep" aria-hidden="true"></span>
+      <button id="dl-mute-btn" type="button" class="dl-no-drag dl-btn" title="静音 / 取消静音" aria-label="静音">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+        </svg>
+      </button>
+      <input id="dl-volume-slider" type="range" class="dl-no-drag dl-vol-slider" min="0" max="100" value="80" title="调节音量" aria-label="调节音量">
+      <span class="dl-more-sep" aria-hidden="true"></span>
+      <button id="dl-preset-btn" type="button" class="dl-no-drag dl-btn dl-btn-text" title="切换歌词配色" aria-label="切换歌词配色">色</button>
+      <button id="dl-surface-btn" type="button" class="dl-no-drag dl-btn dl-btn-text" title="切换外观形态（无框/胶囊/磨砂）" aria-label="切换外观形态">框</button>
+      <button id="dl-center-btn" type="button" class="dl-no-drag dl-btn dl-btn-text" title="水平居中到当前屏幕" aria-label="水平居中">居</button>
+      <button id="dl-settings-btn" class="dl-no-drag dl-btn" type="button" title="打开主窗口歌词设置" aria-label="歌词样式设置">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.08a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+    </div>
+
+    <output id="dl-error" role="status"></output>
+  </div>
+
+  <script>
+    function computeWordProgress(words, t) {
+      if (!Array.isArray(words) || words.length === 0) return [];
+      const time = Number.isFinite(Number(t)) ? Number(t) : 0;
+      return words.map((w) => {
+        const start = Number(w && w.start !== undefined ? w.start : 0);
+        const rawDur = w && w.dur !== undefined ? w.dur : (w && w.duration !== undefined ? w.duration : 0);
+        const dur = Math.max(0.001, Number(rawDur) || 0);
+        let progress = 0;
+        if (time >= start + dur) {
+          progress = 1;
+        } else if (time > start) {
+          progress = Math.max(0, Math.min(1, (time - start) / dur));
+        }
+        return {
+          text: String(w && w.text !== undefined ? w.text : ''),
+          start: start,
+          dur: dur,
+          progress: progress,
+        };
+      });
+    }
+
+    if (typeof window !== 'undefined') window.computeWordProgress = computeWordProgress;
+    if (typeof globalThis !== 'undefined') globalThis.computeWordProgress = computeWordProgress;
+
+    (function () {
+      if (typeof document === 'undefined') return;
+      const shell = document.getElementById('dl-shell');
+      const contentEl = document.getElementById('dl-content');
+      const rowA = document.getElementById('dl-row-a');
+      const rowB = document.getElementById('dl-row-b');
+      const playIcon = document.getElementById('dl-play-icon');
+      const lockBtn = document.getElementById('dl-lock-btn');
+      const closeBtn = document.getElementById('dl-close-btn');
+      const moreBtn = document.getElementById('dl-more-btn');
+      const morePopover = document.getElementById('dl-more-popover');
+      if (!shell || !rowA || !rowB) return;
+
+      const presets = {
+        cinema_white: ['#ffffff', '#fffefa', '#e1e1e5'],
+        emerald_flow: ['#67dbab', '#c5ffe6', '#eff7f2'],
+        vinyl_gold: ['#e8b76a', '#ffe5af', '#fff4e2'],
+        light_desktop_ink: ['#181a1f', '#181a1f', '#52535a'],
+        sakura_mist: ['#ffbad1', '#ffe4ed', '#fff4f4'],
+        game_contrast: ['#7be082', '#ffffff', '#ffffff'],
+        apple_glass: ['#8ad4ff', '#ffffff', '#edf2f7'],
+        neon_duo: ['#48e5ff', '#d6b4ff', '#f2f5ff'],
+      };
+      const surfaceModes = ['borderless', 'pill', 'acrylic'];
+      const surfaceLabels = { borderless: '纯净无框', pill: '灵动胶囊', acrylic: '亚克力磨砂' };
+
+      let gpuMode = 'balanced';
+      let playerInstance = null;
+      let lastMessage = -1;
+      const retiredInstances = new Set();
+      let lastSequence = -1;
+      let lastFrame = -Infinity;
+      let isLocked = false;
+      let osdTimer = null;
+      let wheelFontSaveTimer = null;
+      let fitTimer = null;
+      let rafId = null;
+      let sseTimer = null;
+      let sseAttempt = 0;
+      let activeEventSource = null;
+      let activeWordNodes = [];
+      let lastRenderedKey = '';
+
+      const styleState = {
+        font_size: 28,
+        font_weight: 700,
+        shadow_strength: 1.0,
+        played_color: '#62a368',
+        unplayed_color: '#f5f5f7',
+        preset: 'cinema_white',
+        surface_style: 'borderless',
+        stroke: false,
+        bg_opacity: 0,
+        align: 'center',
+        mode: 'double',
+        show_translation: true,
+        wheel_volume: false,
+      };
+
+      const lyricState = {
+        words: [],
+        current_time: 0,
+        received_at: nowMs(),
+        is_playing: false,
+        line: '',
+        next_line: '',
+        translation: '',
+        title: '',
+        artist: '',
+        line_index: -1,
+      };
+
+      function nowMs() {
+        return typeof performance !== 'undefined' && typeof performance.now === 'function'
+          ? performance.now()
+          : Date.now();
+      }
+
+      function normalizeHex(raw, fallback) {
+        if (typeof raw !== 'string') return fallback;
+        const t = raw.trim().toLowerCase();
+        return /^#[0-9a-f]{6}$/.test(t) ? t : fallback;
+      }
+
+      const preview = Boolean(globalThis.location && new URLSearchParams(globalThis.location.search).get('preview') === '1');
+      if (preview) {
+        const fc = document.querySelector?.('.floating-controls');
+        if (fc) fc.hidden = true;
+        if (morePopover) morePopover.hidden = true;
+      }
+
+      async function request(path, body, method = 'POST') {
+        const res = await fetch(path, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const result = await res.json();
+        if (!res.ok || !result.ok) throw new Error(result.error?.message || '操作失败 (' + res.status + ')');
+        return result.data;
+      }
+
+      function scheduleAutoFitHeight() {
+        if (preview || isLocked || !contentEl) return;
+        if (fitTimer && typeof clearTimeout === 'function') clearTimeout(fitTimer);
+        if (typeof setTimeout !== 'function') return;
+        fitTimer = setTimeout(() => {
+          fitTimer = null;
+          if (preview || isLocked || !contentEl) return;
+          const contentH = Number(contentEl.scrollHeight || 0);
+          if (!contentH) return;
+          const popOpen = Boolean(morePopover && !morePopover.hidden);
+          const needed = Math.max(64, Math.min(360, Math.ceil(contentH + (popOpen ? 68 : 24))));
+          const curH = Number(globalThis.window?.innerHeight || 0);
+          if (curH > 0 && needed > curH + 2) {
+            const bridge = globalThis.window?.pywebview?.api;
+            if (bridge && typeof bridge.ensure_min_height === 'function') {
+              Promise.resolve(bridge.ensure_min_height(needed)).catch(() => {});
+            } else {
+              request('/api/desktop/lyrics-window/fit', { min_height: needed }).catch(() => {});
+            }
+          }
+        }, 120);
+      }
+
+      function applyStyle(incoming) {
+        if (incoming && typeof incoming === 'object') {
+          if (Number.isFinite(Number(incoming.font_size))) {
+            styleState.font_size = Math.max(18, Math.min(48, Math.round(Number(incoming.font_size))));
+          }
+          if (Number.isFinite(Number(incoming.font_weight))) {
+            styleState.font_weight = Math.max(400, Math.min(800, Math.round(Number(incoming.font_weight))));
+          }
+          if (Number.isFinite(Number(incoming.shadow_strength))) {
+            styleState.shadow_strength = Math.max(0, Math.min(1.5, Math.round(Number(incoming.shadow_strength) * 100) / 100));
+          }
+          if (incoming.preset) styleState.preset = incoming.preset;
+          if (surfaceModes.includes(String(incoming.surface_style || '').toLowerCase())) {
+            styleState.surface_style = String(incoming.surface_style).toLowerCase();
+          }
+          if (incoming.played_color) {
+            styleState.played_color = normalizeHex(incoming.played_color, styleState.played_color);
+          }
+          if (incoming.unplayed_color) {
+            styleState.unplayed_color = normalizeHex(incoming.unplayed_color, styleState.unplayed_color);
+          }
+          if (typeof incoming.stroke === 'boolean') {
+            styleState.stroke = incoming.stroke;
+          }
+          if (Number.isFinite(Number(incoming.bg_opacity))) {
+            styleState.bg_opacity = Math.max(0, Math.min(0.8, Math.round(Number(incoming.bg_opacity) * 100) / 100));
+          }
+          if (['left', 'center', 'right'].includes(String(incoming.align))) {
+            styleState.align = String(incoming.align);
+          }
+          if (['single', 'double'].includes(String(incoming.mode))) {
+            styleState.mode = String(incoming.mode);
+          }
+          if (typeof incoming.show_translation === 'boolean') {
+            styleState.show_translation = incoming.show_translation;
+          }
+          if (typeof incoming.wheel_volume === 'boolean') {
+            styleState.wheel_volume = incoming.wheel_volume;
+          }
+        }
+
+        const rootStyle = document.documentElement.style;
+        rootStyle.setProperty('--dl-font-size', styleState.font_size + 'px');
+        rootStyle.setProperty('--dl-font-weight', String(styleState.font_weight));
+        rootStyle.setProperty('--dl-shadow-strength', String(styleState.shadow_strength));
+        const colors = presets[styleState.preset] || [styleState.played_color, styleState.played_color, styleState.unplayed_color];
+        shell.dataset.preset = styleState.preset;
+        shell.dataset.surface = styleState.surface_style;
+        shell.dataset.mode = styleState.mode;
+        rootStyle.setProperty('--dl-played', colors[0]);
+        rootStyle.setProperty('--dl-highlight', colors[1]);
+        rootStyle.setProperty('--dl-unplayed', colors[2]);
+        rootStyle.setProperty('--dl-bg-opacity', String(styleState.bg_opacity));
+        rootStyle.setProperty('--dl-align', styleState.align);
+
+        shell.dataset.stroke = styleState.stroke ? 'true' : 'false';
+        shell.dataset.align = styleState.align;
+        scheduleAutoFitHeight();
+      }
+
+      function updatePlayButtonIcon(playing) {
+        document.getElementById('dl-play-btn')?.setAttribute('aria-pressed', String(playing));
+        if (!playIcon) return;
+        playIcon.textContent = '';
+        const ns = 'http://www.w3.org/2000/svg';
+        if (playing) {
+          const r1 = document.createElementNS(ns, 'rect');
+          r1.setAttribute('x', '6'); r1.setAttribute('y', '5'); r1.setAttribute('width', '4'); r1.setAttribute('height', '14'); r1.setAttribute('rx', '1');
+          const r2 = document.createElementNS(ns, 'rect');
+          r2.setAttribute('x', '14'); r2.setAttribute('y', '5'); r2.setAttribute('width', '4'); r2.setAttribute('height', '14'); r2.setAttribute('rx', '1');
+          playIcon.appendChild(r1);
+          playIcon.appendChild(r2);
+        } else {
+          const poly = document.createElementNS(ns, 'polygon');
+          poly.setAttribute('points', '7 5 19 12 7 19 7 5');
+          playIcon.appendChild(poly);
+        }
+      }
+
+      function renderKaraokeLine(targetEl, words, fallbackText, currentTime) {
+        targetEl.textContent = '';
+        targetEl.classList.remove('is-plain', 'is-active-lrc');
+        activeWordNodes = [];
+        if (Array.isArray(words) && words.length > 0) {
+          const progressList = computeWordProgress(words, currentTime);
+          words.forEach((w, idx) => {
+            const wordText = String(w && w.text !== undefined ? w.text : '');
+            const p = progressList[idx] ? progressList[idx].progress : 0;
+            const wrap = document.createElement('span');
+            wrap.className = 'dl-word';
+            wrap.style.setProperty('--progress', (p * 100).toFixed(1) + '%');
+
+            const strokeSpan = document.createElement('span');
+            strokeSpan.className = 'dl-word-stroke';
+            strokeSpan.setAttribute('aria-hidden', 'true');
+            strokeSpan.textContent = wordText;
+
+            const fillSpan = document.createElement('span');
+            fillSpan.className = 'dl-word-fill';
+            fillSpan.textContent = wordText;
+
+            wrap.appendChild(strokeSpan);
+            wrap.appendChild(fillSpan);
+            targetEl.appendChild(wrap);
+            activeWordNodes.push(wrap);
+          });
+        } else {
+          targetEl.classList.add('is-plain', 'is-active-lrc');
+          targetEl.textContent = fallbackText;
+        }
+      }
+
+      function renderPlainRow(targetEl, text, { secondary = false, hidden = false } = {}) {
+        targetEl.textContent = '';
+        targetEl.classList.add('is-plain');
+        targetEl.classList.remove('is-active-lrc');
+        targetEl.classList.toggle('is-secondary', secondary);
+        targetEl.classList.toggle('is-hidden', hidden);
+        if (!hidden) targetEl.textContent = text;
+      }
+
+      function renderLyricsDom() {
+        const primary = lyricState.line;
+        const translation = styleState.show_translation ? lyricState.translation : '';
+        const nextLine = lyricState.next_line;
+        const title = lyricState.title;
+        const artist = lyricState.artist;
+        const lineIndex = lyricState.line_index;
+
+        if (!primary) {
+          lastRenderedKey = '';
+          activeWordNodes = [];
+          const topText = title || (nextLine ? (artist || '前奏') : 'Pruner Studio · 桌面歌词就绪');
+          const idleText = title
+            ? (artist || (lyricState.is_playing ? '纯音乐或暂无同步歌词' : '已暂停'))
+            : '播放曲目后将实时同步当前歌词';
+          if (styleState.mode === 'single') {
+            renderPlainRow(rowA, nextLine || topText, { secondary: false, hidden: false });
+            rowA.classList.add('is-active-lrc');
+            renderPlainRow(rowB, '', { secondary: true, hidden: true });
+          } else {
+            renderPlainRow(rowA, topText, { secondary: false, hidden: false });
+            rowA.classList.add('is-active-lrc');
+            renderPlainRow(rowB, nextLine || idleText, { secondary: true, hidden: false });
+          }
+          scheduleAutoFitHeight();
+          return;
+        }
+
+        const renderKey = [
+          styleState.mode,
+          styleState.show_translation ? 'T' : 'F',
+          lineIndex,
+          primary,
+          nextLine,
+          translation,
+          lyricState.words.length,
+        ].join('|');
+
+        if (renderKey === lastRenderedKey && activeWordNodes.length === lyricState.words.length) {
+          if (rafId === null) applyWordProgressAt(getInterpolatedTime());
+          return;
+        }
+        lastRenderedKey = renderKey;
+        if (gpuMode !== 'eco' && shell.dataset.gameMode !== 'true' && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+          rowA.parentElement?.animate?.([{ opacity: 0.65, transform: 'translateY(3px)' }, { opacity: 1, transform: 'none' }], 150);
+        }
+
+        if (styleState.mode === 'single') {
+          rowA.classList.remove('is-secondary', 'is-hidden');
+          renderKaraokeLine(rowA, lyricState.words, primary, getInterpolatedTime());
+          if (translation) {
+            renderPlainRow(rowB, translation, { secondary: true, hidden: false });
+          } else {
+            renderPlainRow(rowB, '', { secondary: true, hidden: true });
+          }
+          scheduleAutoFitHeight();
+          return;
+        }
+
+        if (translation) {
+          rowA.classList.remove('is-secondary', 'is-hidden');
+          renderKaraokeLine(rowA, lyricState.words, primary, getInterpolatedTime());
+          renderPlainRow(rowB, translation, { secondary: true, hidden: false });
+          scheduleAutoFitHeight();
+          return;
+        }
+
+        const oddLine = lineIndex >= 0 && (lineIndex % 2 === 1);
+        if (!oddLine) {
+          rowA.classList.remove('is-secondary', 'is-hidden');
+          renderKaraokeLine(rowA, lyricState.words, primary, getInterpolatedTime());
+          renderPlainRow(rowB, nextLine || (title ? title + (artist ? ' · ' + artist : '') : ''), {
+            secondary: !nextLine,
+            hidden: !nextLine && !title,
+          });
+        } else {
+          renderPlainRow(rowA, nextLine || '', { secondary: false, hidden: false });
+          rowB.classList.remove('is-secondary', 'is-hidden');
+          renderKaraokeLine(rowB, lyricState.words, primary, getInterpolatedTime());
+        }
+        scheduleAutoFitHeight();
+      }
+
+      function getInterpolatedTime() {
+        const base = lyricState.current_time + (lyricState.offset_sec || 0);
+        if (!lyricState.is_playing || lyricState.buffering) return base;
+        const elapsed = Math.max(0, (nowMs() - lyricState.received_at) / 1000);
+        return base + elapsed * (lyricState.playback_rate || 1);
+      }
+
+      function applyWordProgressAt(t) {
+        if (!Array.isArray(lyricState.words) || lyricState.words.length === 0) return;
+        const list = computeWordProgress(lyricState.words, t);
+        for (let i = 0; i < activeWordNodes.length && i < list.length; i++) {
+          activeWordNodes[i].style.setProperty('--progress', (list[i].progress * 100).toFixed(1) + '%');
+        }
+      }
+
+      function stopKaraokeLoop() {
+        if (rafId !== null && typeof cancelAnimationFrame === 'function') {
+          cancelAnimationFrame(rafId);
+        }
+        rafId = null;
+      }
+
+      function ensureKaraokeLoop() {
+        if (!lyricState.is_playing || lyricState.buffering || gpuMode === 'eco' || lyricState.words.length === 0 || document.hidden) {
+          stopKaraokeLoop();
+          if (lyricState.words.length > 0) {
+            applyWordProgressAt(getInterpolatedTime());
+          }
+          return;
+        }
+        if (rafId !== null || typeof requestAnimationFrame !== 'function') return;
+        const tick = (now) => {
+          rafId = null;
+          if (!lyricState.is_playing || lyricState.buffering || gpuMode === 'eco' || lyricState.words.length === 0 || document.hidden) {
+            return;
+          }
+          if (now - lastFrame >= 1000 / (gpuMode === 'high' ? 60 : 30) - 0.1) {
+            applyWordProgressAt(getInterpolatedTime());
+            lastFrame = now;
+          }
+          rafId = requestAnimationFrame(tick);
+        };
+        rafId = requestAnimationFrame(tick);
+      }
+
+      function showOsd(osd) {
+        const box = document.getElementById('dl-osd');
+        const txt = document.getElementById('dl-osd-text');
+        const track = document.getElementById('dl-osd-track');
+        const bar = document.getElementById('dl-osd-bar');
+        if (!box || !txt || !osd?.text) return;
+        txt.textContent = String(osd.text);
+        if (track && bar && typeof osd.progress === 'number' && Number.isFinite(osd.progress)) {
+          track.classList.remove('hidden');
+          bar.style.width = Math.max(0, Math.min(100, Math.round(osd.progress * 100))) + '%';
+        } else if (track) {
+          track.classList.add('hidden');
+        }
+        box.classList.remove('hidden');
+        if (typeof clearTimeout === 'function' && osdTimer) clearTimeout(osdTimer);
+        if (typeof setTimeout === 'function') {
+          osdTimer = setTimeout(() => {
+            osdTimer = null;
+            box.classList.add('hidden');
+          }, 1600);
+        }
+      }
+
+      function syncVolumeUi(volume, muted) {
+        const slider = document.getElementById('dl-volume-slider');
+        const muteBtn = document.getElementById('dl-mute-btn');
+        const pct = Math.max(0, Math.min(100, Math.round((Number(volume) || 0) * 100)));
+        if (slider) {
+          slider.value = String(pct);
+          slider.style?.setProperty?.('--dl-vol-pct', (muted ? 0 : pct) + '%');
+        }
+        if (muteBtn) {
+          muteBtn.setAttribute('aria-pressed', String(Boolean(muted)));
+        }
+      }
+
+      function setMoreMenuOpen(open) {
+        if (!morePopover || preview || isLocked) return;
+        const nextOpen = Boolean(open);
+        morePopover.hidden = !nextOpen;
+        shell.classList.toggle('is-menu-open', nextOpen);
+        moreBtn?.setAttribute('aria-expanded', String(nextOpen));
+        if (nextOpen) scheduleAutoFitHeight();
+      }
+
+      function applyPayload(payload) {
+        if (!payload || typeof payload !== 'object') return;
+        if (payload.player_instance_id && Number.isSafeInteger(payload.msg_seq)) {
+          if (retiredInstances.has(payload.player_instance_id)) return;
+          if (playerInstance !== payload.player_instance_id) {
+            if (playerInstance) retiredInstances.add(playerInstance);
+            playerInstance = payload.player_instance_id;
+            lastMessage = lastSequence = -1;
+            lastRenderedKey = '';
+          }
+          if (payload.msg_seq <= lastMessage) return;
+          lastMessage = payload.msg_seq;
+        }
+        if (Number.isFinite(payload.playback_seq)) {
+          if (payload.playback_seq < lastSequence) return;
+          if (payload.playback_seq !== lastSequence) lastRenderedKey = '';
+          lastSequence = payload.playback_seq;
+        }
+        if (payload.gpu_performance_mode) gpuMode = payload.gpu_performance_mode;
+        if (typeof payload.game_mode === 'boolean') {
+          shell.dataset.gameMode = String(payload.game_mode);
+        }
+        if (Number.isFinite(Number(payload.volume))) {
+          syncVolumeUi(payload.volume, Boolean(payload.muted));
+        }
+        if (payload.osd && typeof payload.osd === 'object') {
+          showOsd(payload.osd);
+        }
+        if (typeof payload.liked === 'boolean') {
+          document.getElementById('dl-heart-btn')?.setAttribute('aria-pressed', String(payload.liked));
+        }
+        if (payload.current_time === undefined && (payload.buffering !== undefined || payload.playback_rate !== undefined || payload.is_playing !== undefined)) {
+          lyricState.current_time = getInterpolatedTime() - (lyricState.offset_sec || 0);
+          lyricState.received_at = nowMs();
+        }
+        if (payload.playback_rate !== undefined) lyricState.playback_rate = Number(payload.playback_rate) || 1;
+        if (payload.offset_sec !== undefined) lyricState.offset_sec = Number(payload.offset_sec) || 0;
+        if (payload.buffering !== undefined) lyricState.buffering = Boolean(payload.buffering);
+        if (payload.line !== undefined) lyricState.line = String(payload.line || '').trim();
+        if (payload.next_line !== undefined) lyricState.next_line = String(payload.next_line || '').trim();
+        if (payload.translation !== undefined) lyricState.translation = String(payload.translation || '').trim();
+        if (payload.title !== undefined) lyricState.title = String(payload.title || '').trim();
+        if (payload.artist !== undefined) lyricState.artist = String(payload.artist || '').trim();
+        if (payload.line_index !== undefined) lyricState.line_index = Number(payload.line_index);
+        if (Array.isArray(payload.words)) {
+          lyricState.words = payload.words;
+        } else if (payload.line !== undefined) {
+          lyricState.words = [];
+        }
+        if (Number.isFinite(Number(payload.current_time))) {
+          lyricState.current_time = Number(payload.current_time);
+          lyricState.received_at = nowMs();
+        }
+        if (typeof payload.is_playing === 'boolean') {
+          lyricState.is_playing = payload.is_playing;
+          updatePlayButtonIcon(lyricState.is_playing);
+        }
+
+        const lockedVal = typeof payload.locked === 'boolean'
+          ? payload.locked
+          : (typeof payload.window?.locked === 'boolean' ? payload.window.locked : null);
+        if (lockedVal !== null) {
+          isLocked = lockedVal;
+          shell.classList.toggle('is-locked', isLocked);
+          if (isLocked) setMoreMenuOpen(false);
+          if (lockBtn) lockBtn.classList.toggle('is-active', isLocked);
+        }
+
+        renderLyricsDom();
+        ensureKaraokeLoop();
+      }
+
+      const sendCommand = action => request('/api/desktop/command', { action });
+      const postWindowControl = (open, locked) => request('/api/desktop/lyrics-window', { open, locked });
+      const error = document.getElementById('dl-error');
+      function handle(action) {
+        return async e => {
+          if (preview) return;
+          if (error) error.textContent = '';
+          try { await action(e); }
+          catch (err) { if (error) error.textContent = err.message || '无法连接播放器'; }
+        };
+      }
+
+      shell.addEventListener('pointerdown', handle(async e => {
+        if (e.button !== 0 || isLocked) return;
+        const resizeHandle = e.target?.closest?.('.dl-resize-handle');
+        if (resizeHandle) {
+          const edge = resizeHandle.dataset?.resizeEdge || resizeHandle.getAttribute?.('data-resize-edge');
+          if (!edge) return;
+          e.preventDefault?.();
+          const bridge = globalThis.window?.pywebview?.api;
+          if (bridge && typeof bridge.start_resize === 'function') {
+            await bridge.start_resize(edge);
+          } else {
+            await request('/api/desktop/lyrics-window/resize-start', { edge });
+          }
+          return;
+        }
+        if (!e.target?.closest?.('button, input, select, label, a, .dl-no-drag, .floating-controls, .dl-more-popover')) {
+          setMoreMenuOpen(false);
+          const bridge = globalThis.window?.pywebview?.api;
+          if (bridge && typeof bridge.start_drag === 'function') {
+            await bridge.start_drag();
+          } else {
+            await request('/api/desktop/lyrics-window/drag', {});
+          }
+        }
+      }));
+
+      shell.addEventListener('contextmenu', e => {
+        if (preview || isLocked) return;
+        e.preventDefault?.();
+        setMoreMenuOpen(morePopover ? morePopover.hidden : false);
+      });
+
+      document.addEventListener('pointerdown', e => {
+        if (!morePopover || morePopover.hidden) return;
+        if (!e.target?.closest?.('#dl-more-popover, #dl-more-btn')) {
+          setMoreMenuOpen(false);
+        }
+      });
+
+      document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && morePopover && !morePopover.hidden) {
+          setMoreMenuOpen(false);
+        }
+      });
+
+      moreBtn?.addEventListener('click', () => {
+        if (preview || isLocked) return;
+        setMoreMenuOpen(morePopover ? morePopover.hidden : false);
+      });
+
+      for (const [id, action] of Object.entries({
+        prev: 'prev',
+        play: 'toggle_play',
+        next: 'next',
+        heart: 'toggle_like',
+        minus: 'lyric_offset_minus',
+        plus: 'lyric_offset_plus',
+        mute: 'toggle_mute',
+        settings: 'open_lyrics_settings',
+      })) {
+        document.getElementById('dl-' + id + '-btn')?.addEventListener('click', handle(() => sendCommand(action)));
+      }
+
+      const volSlider = document.getElementById('dl-volume-slider');
+      let lastVolSentAt = 0;
+      if (volSlider) {
+        volSlider.addEventListener('input', handle(async e => {
+          const pct = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+          volSlider.style?.setProperty?.('--dl-vol-pct', pct + '%');
+          const now = Date.now();
+          if (now - lastVolSentAt < 60) return;
+          lastVolSentAt = now;
+          await request('/api/desktop/command', { action: 'set_volume', value: pct / 100 });
+        }));
+        volSlider.addEventListener('change', handle(async e => {
+          const pct = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+          volSlider.style?.setProperty?.('--dl-vol-pct', pct + '%');
+          await request('/api/desktop/command', { action: 'set_volume', value: pct / 100 });
+        }));
+      }
+
+      const adjustFontSize = (delta) => handle(async () => {
+        const nextSize = Math.max(18, Math.min(48, styleState.font_size + delta));
+        const saved = await request('/api/settings', { desktop_lyrics_style: { font_size: nextSize } }, 'PUT');
+        applyStyle(saved.desktop_lyrics_style || { font_size: nextSize });
+        showOsd({ text: '字幕字号 ' + nextSize + 'px', kind: 'style' });
+      });
+      document.getElementById('dl-font-minus-btn')?.addEventListener('click', adjustFontSize(-2));
+      document.getElementById('dl-font-plus-btn')?.addEventListener('click', adjustFontSize(2));
+
+      shell.addEventListener('wheel', handle(async e => {
+        if (isLocked) return;
+        if (e.ctrlKey) {
+          e.preventDefault?.();
+          const step = e.deltaY < 0 ? 2 : -2;
+          const nextSize = Math.max(18, Math.min(48, styleState.font_size + step));
+          if (nextSize === styleState.font_size) return;
+          styleState.font_size = nextSize;
+          document.documentElement.style.setProperty('--dl-font-size', nextSize + 'px');
+          showOsd({ text: '字幕字号 ' + nextSize + 'px', kind: 'style' });
+          scheduleAutoFitHeight();
+          if (wheelFontSaveTimer && typeof clearTimeout === 'function') clearTimeout(wheelFontSaveTimer);
+          wheelFontSaveTimer = typeof setTimeout === 'function'
+            ? setTimeout(async () => {
+                wheelFontSaveTimer = null;
+                try {
+                  const saved = await request('/api/settings', { desktop_lyrics_style: { font_size: styleState.font_size } }, 'PUT');
+                  if (saved?.desktop_lyrics_style) applyStyle(saved.desktop_lyrics_style);
+                } catch {}
+              }, 160)
+            : await (async () => {
+                const saved = await request('/api/settings', { desktop_lyrics_style: { font_size: styleState.font_size } }, 'PUT');
+                if (saved?.desktop_lyrics_style) applyStyle(saved.desktop_lyrics_style);
+              })();
+          return;
+        }
+        if (styleState.wheel_volume) {
+          e.preventDefault?.();
+          await sendCommand(e.deltaY < 0 ? 'volume_up' : 'volume_down');
+        }
+      }), { passive: false });
+
+      lockBtn?.addEventListener('click', handle(async () => {
+        await postWindowControl(true, true);
+        isLocked = true;
+        setMoreMenuOpen(false);
+        shell.classList.add('is-locked');
+      }));
+
+      closeBtn?.addEventListener('click', handle(async () => {
+        await postWindowControl(false, false);
+        window.close();
+      }));
+
+      document.getElementById('dl-preset-btn')?.addEventListener('click', handle(async () => {
+        const names = Object.keys(presets);
+        const preset = names[(names.indexOf(styleState.preset) + 1) % names.length];
+        const [played_color, , unplayed_color] = presets[preset];
+        const saved = await request('/api/settings', { desktop_lyrics_style: { preset, played_color, unplayed_color } }, 'PUT');
+        applyStyle(saved.desktop_lyrics_style || { preset, played_color, unplayed_color });
+        showOsd({ text: '歌词配色已切换', kind: 'style' });
+      }));
+
+      document.getElementById('dl-surface-btn')?.addEventListener('click', handle(async () => {
+        const nextSurface = surfaceModes[(surfaceModes.indexOf(styleState.surface_style) + 1) % surfaceModes.length];
+        const saved = await request('/api/settings', { desktop_lyrics_style: { surface_style: nextSurface } }, 'PUT');
+        applyStyle(saved.desktop_lyrics_style || { surface_style: nextSurface });
+        showOsd({ text: '形态：' + (surfaceLabels[nextSurface] || nextSurface), kind: 'style' });
+      }));
+
+      document.getElementById('dl-center-btn')?.addEventListener('click', handle(async () => {
+        const bridge = globalThis.window?.pywebview?.api;
+        if (bridge && typeof bridge.snap_center === 'function') {
+          await bridge.snap_center();
+        } else {
+          await request('/api/desktop/lyrics-window/center', {});
+        }
+        showOsd({ text: '已水平居中', kind: 'style' });
+      }));
+
+      if (typeof ResizeObserver === 'function' && contentEl) {
+        new ResizeObserver(() => scheduleAutoFitHeight()).observe(contentEl);
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) stopKaraokeLoop();
+        else ensureKaraokeLoop();
+      });
+
+      fetch('/api/settings', { headers: { 'Accept': 'application/json' } })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((payload) => {
+          const settings = payload && payload.data ? payload.data : null;
+          if (settings) {
+            gpuMode = settings.gpu_performance_mode || 'balanced';
+            shell.dataset.gameMode = String(Boolean(settings.game_mode));
+          }
+          if (settings && settings.desktop_lyrics_style) {
+            ensureKaraokeLoop();
+            applyStyle(settings.desktop_lyrics_style);
+            lastRenderedKey = '';
+            renderLyricsDom();
+          }
+        })
+        .catch(() => {});
+
+      applyStyle(styleState);
+
+      function connectSse() {
+        if (typeof EventSource === 'undefined' || activeEventSource) return;
+        const es = preview ? new EventSource('/api/events?lyrics_preview=1') : new EventSource('/api/events');
+        activeEventSource = es;
+        es.onopen = () => { sseAttempt = 0; };
+        es.addEventListener('connected', () => { sseAttempt = 0; });
+        es.addEventListener('desktop_lyrics', (event) => {
+          try {
+            applyPayload(JSON.parse(event.data));
+          } catch {}
+        });
+        es.addEventListener('desktop_lyrics_style', (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload.gpu_performance_mode) gpuMode = payload.gpu_performance_mode;
+            if (typeof payload.game_mode === 'boolean') shell.dataset.gameMode = String(payload.game_mode);
+            ensureKaraokeLoop();
+            const nextStyle = payload && payload.style ? payload.style : payload;
+            applyStyle(nextStyle);
+            lastRenderedKey = '';
+            renderLyricsDom();
+          } catch {}
+        });
+        es.onerror = () => {
+          if (activeEventSource !== es) return;
+          try { es.close(); } catch {}
+          activeEventSource = null;
+          const delays = [1000, 2000, 5000, 15000];
+          const delay = delays[Math.min(sseAttempt, delays.length - 1)];
+          sseAttempt += 1;
+          if (!sseTimer) {
+            sseTimer = setTimeout(() => {
+              sseTimer = null;
+              connectSse();
+            }, delay);
+          }
+        };
+      }
+
+      connectSse();
+    })();
+  </script>
+</body>
+</html>

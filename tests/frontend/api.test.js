@@ -5,6 +5,7 @@
  * POST /api/operations/reconcile with action, target, source, and song IDs
  */
 import assert from 'node:assert/strict';
+import { state } from '../../web/js/state.js';
 import { api } from '../../web/js/api.js';
 
 export async function runApiTests() {
@@ -109,7 +110,7 @@ export async function runApiTests() {
     assert.equal(removeRes.ok, true);
     assert.equal(lastUrl, '/api/playlists/555/remove-tracks');
     assert.equal(lastMethod, 'POST');
-    assert.deepEqual(lastBody, { song_ids: [101, 102], source_playlist_id: 555 });
+    assert.deepEqual(lastBody, { ...state.writeScope(), song_ids: [101, 102], source_playlist_id: 555 });
 
     // 6. Test POST /api/operations/reconcile
     const reconcileRes1 = await api.reconcileOperations('unlike', 777, [201, 202], 777);

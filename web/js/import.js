@@ -17,6 +17,13 @@ class ImportManager {
     this.dropzone = document.getElementById(dropzoneId);
     this.fileInput = document.getElementById(fileInputId);
     this.initEvents();
+    globalThis.window?.addEventListener('pruner:modal-closed', event => {
+      if (event.detail?.id !== 'import-modal') return;
+      if (this.fileInput) this.fileInput.value = '';
+      const replace = document.getElementById('import-replace');
+      if (replace) replace.checked = false;
+      this.dropzone?.classList.remove('drag-over');
+    });
   }
 
   initEvents() {
@@ -56,6 +63,8 @@ class ImportManager {
 
   async handleFile(file) {
     if (!file) return;
+    if (this.fileInput) this.fileInput.value = '';
+    const scope = state.writeScope();
     const name = file.name.toLowerCase();
     const isJson = name.endsWith('.json');
     const isCsv = name.endsWith('.csv');
@@ -74,7 +83,7 @@ class ImportManager {
       if (isJson) {
         try {
           const parsed = JSON.parse(text);
-          if (!Array.isArray(parsed) && !parsed.tracks) {
+          if (!Array.isArray(parsed) && !parsed?.tracks && !parsed?.songs && parsed?.schema_version !== 2) {
             toast.warning('数据格式警告', 'JSON 文件应包含曲目数组或 { tracks: [...] } 结构。');
           }
         } catch {
@@ -84,16 +93,21 @@ class ImportManager {
       }
 
       toast.info('正在导入', '提交至曲库导入接口...');
-      const res = await api.importCatalog(format, text);
+      const mode = globalThis.document?.getElementById('import-replace')?.checked ? 'replace' : 'merge';
+      const res = await api.importCatalog({ format, content: text, mode, ...scope });
 
+      if (scope.session_generation !== state.get('sessionGeneration')) return;
       if (res.ok && res.data) {
-        const importedCount = res.data.imported_count || res.data.tracks?.length || 0;
-        toast.success('导入成功', `成功将 ${importedCount} 首曲目导入本地缓存。`);
+        const level = res.data.failed_count ? 'warning' : 'success';
+        toast[level]('导入完成', `新增 ${res.data.added_count ?? res.data.imported_count ?? 0} 首 · 已有 ${res.data.existing_count || 0} 首 · 失败 ${res.data.failed_count || 0} 首`);
+        const replace = globalThis.document?.getElementById('import-replace');
+        if (replace) replace.checked = false;
 
         // The import response contains only the imported tracks; re-fetch the
         // full catalog so other playlists do not vanish from the local views.
         try {
           const catRes = await api.getCatalog();
+          if (scope.session_generation !== state.get('sessionGeneration')) return;
           if (catRes.ok && catRes.data) {
             const tracks = Array.isArray(catRes.data.tracks)
               ? catRes.data.tracks
@@ -110,7 +124,7 @@ class ImportManager {
       }
     } catch (err) {
       toast.error('文件处理错误', err.message);
-    }
+    } finally { if (this.fileInput) this.fileInput.value = ''; }
   }
 }
 

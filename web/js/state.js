@@ -1,10 +1,10 @@
+import { writableNeteaseTrack, getTrackKey, serializeTrackForStorage } from './utils.js';
 /**
  * Pruner Studio - Application State Store
  * Central reactive store with pub/sub event emitters, account-scoped caching,
- * soft-commit countdown management, and canonical playlist resolution.
+ * soft-commit countdown management (cancellable through backup wait),
+ * global playback queue, persistent relisten-later state, and canonical playlist resolution.
  */
-
-import { getCoverAccent, deepClone } from './utils.js';
 
 const getStorageItem = (key) => {
   try {
@@ -22,47 +22,108 @@ const setStorageItem = (key, val) => {
   } catch {}
 };
 
+const DEFAULT_SETTINGS = {
+  quality_preference: 'jymaster',
+  quality_arbitration: 'best_quality_race',
+  enable_external_sources: true,
+  external_providers: ['kugou_lite', 'migu', 'qq', 'kuwo', 'bilibili', 'gdstudio'],
+  custom_external_api: '',
+  local_music_dirs: [],
+  visual_mode: 'soft_dynamic',
+  gpu_performance_mode: 'balanced',
+  game_mode: false,
+  stage_theme: 'fluid',
+  stage_lyric_size: 24,
+  stage_lyric_align: 'left',
+  visualizer_mode: 'bars',
+  enable_3d_effects: true,
+  minimize_to_tray: true,
+  loudness_normalization: true,
+  crossfade_ms: 150,
+  audio_cache_limit_mb: 512,
+  lyrics_blur_depth: false,
+  audio_reactive_glow: true,
+  enable_amll_ttml_fallback: true,
+  global_hotkeys_enabled: true,
+  smart_radio_explore_ratio: 0.4,
+};
+
 class Store {
   constructor() {
     this.listeners = new Map();
+    this.inFlightCommits = [];
 
     // Initial State
     this.state = {
       // User / Session
       authenticated: false,
-      user: null, // AccountSummary: { user_id, display_name, avatar_url }
+      user: null, // AccountSummary: { user_id, display_name, avatar_url, vip_type }
+      sessionGeneration: 0,
+      cachedAccounts: [],
+      offlineMode: false,
+      guestLocalMode: false,
+      windowVisible: true,
+      windowMinimized: false,
+      resumableSession: null,
+      activeOfflineAccountId: null,
       isOnline: typeof navigator !== 'undefined' ? Boolean(navigator.onLine) : true,
 
       // Playlists & Catalog
       playlists: [],
       selectedPlaylistId: null, // Canonical real playlist ID (never synthetic 'liked')
       catalog: [], // Full Song[]
+      cloudSongs: [],
+      localSongs: [],
       catalogLoading: false,
       catalogError: null,
       playlistSyncing: false,
+      syncProgress: null,
+
+      // Discovery / Recommendations
+      dailyRecommend: [],
+      dailyRecommendMeta: null,
+      personalFmQueue: [],
+      smartRadioSongs: [],
+      radioExhausted: false,
+      radioBreakdown: null,
+      lyricsPreviewSubscribers: 0,
+      dustyGems: [],
+      listeningInsights: null,
+      recentPlayed: [],
+
+      // Multi-Channel Hub & Disk Cache
+      channels: [],
+      audioCacheStats: null,
+      desktopLyricsOpen: false,
+      desktopLyricsLocked: false,
 
       // Deck Review Workspace
       deckQueue: [], // Active filtered and ordered songs
       deckIndex: 0,
-      deckFilter: 'undecided', // 'all' | 'undecided' | 'skipped' | 'rules' | 'vip' | 'unavailable' | 'short' | 'long'
+      deckFilter: 'undecided', // 'all' | 'undecided' | 'relisten' | 'skipped' | 'rules' | 'vip' | 'unavailable' | 'short' | 'long'
       deckOrder: 'recent',     // 'recent' | 'oldest' | 'title' | 'duration'
-      deckHistory: [],         // Local undo history for batch actions
+      deckHistory: [],         // Local undo history for review actions
       keptIds: new Set(),      // Set of kept song IDs for the active review session
       skippedIds: new Set(),   // Set of skipped song IDs
+      relistenIds: new Set(),  // Set of persistent relisten-later song IDs ('L' key)
 
-      // Settings
+      // Settings & Preferences
       instantModeEnabled: true, // Default to instant mode (3s soft-commit)
       autoplayEnabled: getStorageItem('pruner_autoplay') !== 'false',
-      dragEnabled: getStorageItem('pruner_drag_enabled') === 'true', // Optional, default off
-      catalogView: getStorageItem('pruner_catalog_view') || 'table',  // 'table' | 'cards'
+      dragEnabled: getStorageItem('pruner_drag_enabled') === 'true',
+      catalogView: getStorageItem('pruner_catalog_view') || 'table', // 'table' | 'cards'
+      railCollapsed: getStorageItem('pruner_rail_collapsed') === 'true',
+      mobileDrawerOpen: false,
+      settings: { ...DEFAULT_SETTINGS },
 
       // Soft-commit queue (Instant Mode)
-      pendingCommits: [], // Array of active SoftCommit objects
+      pendingCommits: [], // Array of active SoftCommit objects in countdown
 
       // Staged Batch Queue (Batch Mode, Persisted)
       batchQueue: [], // Array of { song, action, playlistId, targetName }
 
       // Catalog Workspace Shared State
+      catalogSection: 'all', // 'all' | 'liked' | 'self_created' | 'subscribed' | 'cloud' | 'local'
       catalogSearchQuery: '',
       catalogActiveFilter: 'all',
       catalogSelectedPlaylistId: 'all',
@@ -75,25 +136,38 @@ class Store {
       // Rules Workshop
       rules: [],
 
-      // Audio Playback
+      // Global Audio Playback & Queue
+      queueVersion: 0,
+      playQueueOrigin: '',
+      playQueue: [],
+      playQueueIndex: -1,
+      playHistoryStack: [],
+      playMode: getStorageItem('pruner_play_mode') || 'order', // 'order' | 'loop' | 'single' | 'shuffle' | 'fm' | 'intelligence' | 'smart_radio'
       currentPlayingSong: null,
       isPlaying: false,
       currentTime: 0,
       duration: 0,
       isChorusActive: false,
-      audioSourceType: 'original', // 'original' | 'alternative'
+      audioSourceType: 'original', // 'original' | 'alternative' | 'cloud' | 'local' | 'external'
       alternativeInfo: null,
+      audioMeta: null,
+      playbackError: null,
+      likedSongIds: new Set(),
       coverAccent: 'hsl(140, 20%, 54%)',
+      coverAccent2: 'hsl(182, 22%, 48%)',
+      coverPaletteColors: null,
 
-      // Synchronized Lyrics
+      // Synchronized Lyrics & Stage
       currentLyrics: null,
       isLyricsDrawerOpen: false,
+      isStageOpen: false,
+      isPlayQueueOpen: false,
 
       // Operation History (Last 100 Minimal Records)
       opsHistory: [],
 
       // Active Workspaces / UI State
-      activeTab: 'deck', // 'deck' | 'catalog' | 'cloud'
+      activeTab: 'discover', // 'discover' | 'catalog' | 'deck' | 'cloud'
       isRulesDrawerOpen: false,
       isPendingDrawerOpen: false,
 
@@ -119,14 +193,20 @@ class Store {
   }
 
   getUserId() {
-    const uid = this.state.user?.user_id ?? this.state.user?.id;
+    const uid = this.state.user?.user_id ?? this.state.user?.id ?? this.state.activeOfflineAccountId;
     return uid ? String(uid) : 'guest';
+  }
+
+  writeScope() {
+    const owner = this.getUserId();
+    return { session_generation: this.get('sessionGeneration'), expected_account_id: owner === 'guest' ? 'local' : owner };
   }
 
   loadUserPreferences() {
     const userId = this.getUserId();
     const instantPref = getStorageItem(`pruner_instant_mode_${userId}`);
     const instantMode = instantPref !== null ? instantPref === 'true' : true;
+
     const batchQueueData = getStorageItem(`pruner_batch_queue_${userId}`);
     let batchQueue = [];
     if (batchQueueData) {
@@ -143,10 +223,34 @@ class Store {
       } catch {}
     }
 
+    const relistenData = getStorageItem(`pruner_relisten_${userId}`);
+    let relistenIds = new Set();
+    if (relistenData) {
+      try {
+        const parsed = JSON.parse(relistenData);
+        if (Array.isArray(parsed)) {
+          relistenIds = new Set(parsed.map(String));
+        }
+      } catch {}
+    }
+
+    const recentData = getStorageItem(`pruner_recent_played_${userId}`);
+    let recentPlayed = [];
+    if (recentData) {
+      try {
+        const parsed = JSON.parse(recentData);
+        if (Array.isArray(parsed)) {
+          recentPlayed = parsed.slice(0, 50);
+        }
+      } catch {}
+    }
+
     this.set({
       instantModeEnabled: instantMode,
       batchQueue,
       opsHistory: opsHistory.slice(0, 100),
+      relistenIds,
+      recentPlayed,
     });
   }
 
@@ -193,6 +297,11 @@ class Store {
 
   set(partialState) {
     const changedKeys = [];
+    const queueKeys = ['playQueue', 'playQueueIndex', 'playMode', 'sessionGeneration', 'user'];
+    if (queueKeys.some(key => key in partialState && partialState[key] !== this.state[key])) {
+      this.state.queueVersion++;
+      changedKeys.push('queueVersion');
+    }
     for (const [key, value] of Object.entries(partialState)) {
       if (this.state[key] !== value) {
         this.state[key] = value;
@@ -205,6 +314,121 @@ class Store {
         this.emit(`change:${key}`, this.state[key]);
       }
       this.emit('state:change', { keys: changedKeys, state: this.state });
+    }
+  }
+
+  // --- Liked Set Sync & Recent Played ---
+
+  rebuildLikedSongIds(catalog = this.state.catalog) {
+    const likedPl = this.getRealLikedPlaylist();
+    const likedPlId = likedPl ? String(likedPl.id) : null;
+    const nextLiked = new Set();
+    const nextKeys = new Set(this.state.likedTrackKeys || []);
+    (catalog || []).forEach(song => {
+      if (song?.liked || (likedPlId && String(song.source_playlist_id) === likedPlId)) {
+        if (song.id) nextLiked.add(String(song.id));
+        const tk = getTrackKey(song);
+        if (tk) nextKeys.add(tk);
+      }
+    });
+    this.set({ likedSongIds: nextLiked, likedTrackKeys: nextKeys });
+  }
+
+  setSongLiked(songOrId, isLiked) {
+    const next = new Set(this.state.likedSongIds || []);
+    const nextKeys = new Set(this.state.likedTrackKeys || []);
+    if (songOrId && typeof songOrId === 'object') {
+      const tk = getTrackKey(songOrId);
+      if (isLiked) {
+        if (songOrId.id) next.add(String(songOrId.id));
+        if (tk) nextKeys.add(tk);
+      } else {
+        if (songOrId.id) next.delete(String(songOrId.id));
+        if (tk) nextKeys.delete(tk);
+      }
+    } else if (songOrId !== null && songOrId !== undefined) {
+      const str = String(songOrId);
+      if (isLiked) {
+        next.add(str);
+        if (str.includes(':')) nextKeys.add(str);
+      } else {
+        next.delete(str);
+        if (str.includes(':')) nextKeys.delete(str);
+      }
+    }
+    this.set({ likedSongIds: next, likedTrackKeys: nextKeys });
+  }
+
+  isSongLiked(songOrId) {
+    if (songOrId === null || songOrId === undefined) return false;
+    const ids = this.state.likedSongIds || new Set();
+    const keys = this.state.likedTrackKeys || new Set();
+    if (typeof songOrId === 'object') {
+      const tk = getTrackKey(songOrId);
+      if (tk && keys.has(tk)) return true;
+      return Boolean(songOrId.id && ids.has(String(songOrId.id)));
+    }
+    const str = String(songOrId);
+    if (ids.has(str) || keys.has(str)) return true;
+    if (str.startsWith('netease:')) return ids.has(str.slice(8));
+    return keys.has(`netease:${str}`);
+  }
+
+  recordRecentPlayed(song) {
+    if (!song) return;
+    const slim = { ...serializeTrackForStorage(song), playedAt: Date.now() };
+    const filtered = this.state.recentPlayed.filter(item => getTrackKey(item) !== slim.track_key);
+    this.replaceRecentPlayed([slim, ...filtered].slice(0, 50));
+  }
+
+  replaceRecentPlayed(next) {
+    setStorageItem(`pruner_recent_played_${this.getUserId()}`, JSON.stringify(next));
+    this.set({ recentPlayed: next });
+  }
+
+  // --- Relisten-Later Persistent Middle State ('L' Key) ---
+
+  markRelistenLater(songId) {
+    if (songId === null || songId === undefined) return;
+    const userId = this.getUserId();
+    const next = new Set(this.state.relistenIds || []);
+    next.add(String(songId));
+    setStorageItem(`pruner_relisten_${userId}`, JSON.stringify(Array.from(next)));
+    this.set({ relistenIds: next });
+  }
+
+  unmarkRelistenLater(songId) {
+    if (songId === null || songId === undefined) return;
+    const userId = this.getUserId();
+    const next = new Set(this.state.relistenIds || []);
+    next.delete(String(songId));
+    setStorageItem(`pruner_relisten_${userId}`, JSON.stringify(Array.from(next)));
+    this.set({ relistenIds: next });
+  }
+
+  isRelistenLater(songId) {
+    if (songId === null || songId === undefined) return false;
+    return (this.state.relistenIds || new Set()).has(String(songId));
+  }
+
+  // --- Settings & Visual Mode ---
+
+  updateSettings(partial) {
+    const next = {
+      ...DEFAULT_SETTINGS,
+      ...(this.state.settings || {}),
+      ...(partial || {}),
+    };
+    this.set({ settings: next });
+    this.applyVisualMode(next.visual_mode);
+    return next;
+  }
+
+  applyVisualMode(mode = null) {
+    const resolved = mode || this.state.settings?.visual_mode || 'soft_dynamic';
+    if (typeof document !== 'undefined' && document.documentElement?.dataset) {
+      document.documentElement.dataset.visualMode = resolved;
+      document.documentElement.dataset.gameMode = String(Boolean(this.state.settings?.game_mode));
     }
   }
 
@@ -239,7 +463,10 @@ class Store {
       return likedPl.id;
     }
 
-    // Fallback to first playlist if available
+    // Fallback to first writable playlist, then first playlist
+    const ownedPl = list.find(p => p.kind === 'self_created' || p.kind === 'owned');
+    if (ownedPl) return ownedPl.id;
+
     return list.length > 0 ? list[0].id : null;
   }
 
@@ -250,10 +477,26 @@ class Store {
    * @returns {{ valid: boolean, action: 'unlike'|'remove_tracks'|null, playlistId: number|string|null, targetName: string, reason?: string }}
    */
   resolveDestructiveAction(song, explicitPlaylistId = null) {
-    if (!song) return { valid: false, action: null, playlistId: null, targetName: '', reason: '未指定歌曲' };
+    if (!song || typeof song !== 'object') return { valid: false, action: null, playlistId: null, targetName: '', reason: '未指定歌曲' };
     const targetPid = explicitPlaylistId ?? song.source_playlist_id ?? song.playlist_id;
     const playlists = this.state.playlists || [];
     const pl = playlists.find(p => String(p.id) === String(targetPid));
+    // Unified local hybrid playlists support pruning ANY canonical track (local/OpenSubsonic/WebDAV/external/NetEase) even offline.
+    if ((pl && pl.kind === 'hybrid') || String(targetPid || '').startsWith('hybrid:')) {
+      const tk = getTrackKey(song);
+      if (!tk) return { valid: false, action: null, playlistId: null, targetName: '', reason: '缺少有效曲目标识' };
+      return {
+        valid: true,
+        action: 'remove_hybrid_tracks',
+        playlistId: pl ? pl.id : String(targetPid),
+        targetName: (pl && pl.name) || '混合歌单',
+        trackKey: tk,
+      };
+    }
+    if (!writableNeteaseTrack(song)) return { valid: false, action: null, playlistId: null, targetName: '', reason: '未指定歌曲' };
+    if (this.state.offlineMode) {
+      return { valid: false, action: null, playlistId: null, targetName: '', reason: '离线只读模式下不可执行云端移除' };
+    }
     const likedPl = this.getRealLikedPlaylist();
     const likedPlId = likedPl ? String(likedPl.id) : null;
 
@@ -272,6 +515,24 @@ class Store {
           action: 'remove_tracks',
           playlistId: pl.id,
           targetName: pl.name || `歌单 #${pl.id}`,
+        };
+      }
+      if (pl.kind === 'subscribed') {
+        return {
+          valid: false,
+          action: null,
+          playlistId: pl.id,
+          targetName: pl.name,
+          reason: '收藏歌单仅支持只读播放，无法从云端移除曲目',
+        };
+      }
+      if (pl.kind === 'cloud' || pl.kind === 'local') {
+        return {
+          valid: false,
+          action: null,
+          playlistId: pl.id,
+          targetName: pl.name,
+          reason: '云盘或本地曲库仅支持只读播放，无法执行歌单移除',
         };
       }
       return {
@@ -308,7 +569,40 @@ class Store {
   }
 
   catalogSongKey(song) {
+    if (song?.local_path || (song?.provider && song.provider !== 'netease') ||
+        (song?.track_key && !song.track_key.startsWith('netease:'))) return getTrackKey(song);
     return this.reviewSongKey(song, 'unknown');
+  }
+
+  getCatalogRows() {
+    const unique = new Map();
+    for (const source of ['catalog', 'cloudSongs', 'localSongs']) {
+      for (const song of this.get(source) || []) {
+        const key = this.catalogSongKey(song);
+        if (!unique.has(key)) unique.set(key, song);
+      }
+    }
+    return [...unique.values()];
+  }
+
+  getRuleEvaluationPool() {
+    const unique = new Map();
+    const songs = ['catalog', 'cloudSongs', 'localSongs'].flatMap(source => this.get(source) || []);
+    for (const song of songs) {
+      const key = getTrackKey(song);
+      const preferred = unique.get(key);
+      if (!preferred) unique.set(key, song);
+      else {
+        const merged = {...song, ...preferred};
+        for (const [field, value] of Object.entries(song)) {
+          if (merged[field] == null || merged[field] === '' || (Array.isArray(merged[field]) && !merged[field].length)) {
+            merged[field] = value;
+          }
+        }
+        unique.set(key, merged);
+      }
+    }
+    return [...unique.values()];
   }
 
   restorePendingOperations(operations) {
@@ -317,7 +611,7 @@ class Store {
           item
           && typeof item === 'object'
           && typeof item.operation_id === 'string'
-          && ['unlike', 'remove_tracks', 'create_playlist', 'add_tracks'].includes(item.action)
+          && ['like', 'unlike', 'remove_tracks', 'create_playlist', 'add_tracks'].includes(item.action)
           && item.target
           && typeof item.target === 'object'
         ))
@@ -377,10 +671,26 @@ class Store {
     this.set({ catalogView: val });
   }
 
-  // --- Soft-Commit Management (Instant Mode 3s Countdown) ---
+  setRailCollapsed(collapsed) {
+    const val = Boolean(collapsed);
+    setStorageItem('pruner_rail_collapsed', val ? 'true' : 'false');
+    this.set({ railCollapsed: val });
+  }
+
+  setPlayMode(mode) {
+    const allowed = ['order', 'loop', 'single', 'shuffle', 'fm', 'intelligence', 'smart_radio'];
+    const resolved = allowed.includes(mode) ? mode : 'order';
+    if (['order', 'loop', 'single', 'shuffle'].includes(resolved)) {
+      setStorageItem('pruner_play_mode', resolved);
+    }
+    this.set({ playMode: resolved });
+  }
+
+  // --- Soft-Commit Management (Instant Mode 3s Countdown + Cancellable Through Backup Wait) ---
 
   /**
    * Registers a 3-second local soft-commit timer for a single destructive action.
+   * Remains cancellable even while awaiting pre-write backup before HTTP mutation fires.
    * @param {Song} song
    * @param {'unlike'|'remove_tracks'} action
    * @param {number|string|null} playlistId
@@ -394,20 +704,7 @@ class Store {
     const commitId = `commit_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const expiresAt = Date.now() + 3000;
     const fromIndex = originalIndex !== null ? originalIndex : (this.state.deckIndex || 0);
-
-    const timerId = setTimeout(async () => {
-      // Remove from pendingCommits list
-      const remaining = (this.state.pendingCommits || []).filter(c => c.id !== commitId);
-      this.set({ pendingCommits: remaining });
-
-      if (typeof commitCallback === 'function') {
-        try {
-          await commitCallback();
-        } catch (err) {
-          console.error('Commit execution error:', err);
-        }
-      }
-    }, 3000);
+    const sessionGeneration = this.state.sessionGeneration || 0;
 
     const softCommit = {
       id: commitId,
@@ -416,10 +713,35 @@ class Store {
       playlistId,
       targetName: targetName || '喜欢的音乐',
       expiresAt,
-      timerId,
+      timerId: null,
       originalIndex: fromIndex,
+      sessionGeneration,
+      status: 'countdown', // 'countdown' | 'preparing' | 'writing' | 'cancelled' | 'committed'
+      cancelled: false,
       cancelCallback,
     };
+
+    softCommit.timerId = setTimeout(async () => {
+      if (softCommit.cancelled) return;
+      softCommit.status = 'preparing';
+
+      // Move from pendingCommits countdown list to cancellable inFlightCommits during backup wait
+      const remaining = (this.state.pendingCommits || []).filter(c => c.id !== commitId);
+      this.inFlightCommits = [softCommit, ...this.inFlightCommits.filter(c => c.id !== commitId)];
+      this.set({ pendingCommits: remaining });
+
+      if (typeof commitCallback === 'function') {
+        try {
+          await commitCallback(softCommit);
+        } catch (err) {
+          console.error('Commit execution error:', err);
+        } finally {
+          this.inFlightCommits = this.inFlightCommits.filter(c => c.id !== commitId);
+        }
+      } else {
+        this.inFlightCommits = this.inFlightCommits.filter(c => c.id !== commitId);
+      }
+    }, 3000);
 
     const nextPending = [softCommit, ...(this.state.pendingCommits || [])];
     this.set({ pendingCommits: nextPending });
@@ -427,44 +749,74 @@ class Store {
   }
 
   /**
-   * Cancels the newest uncommitted soft-commit action (triggered by Z key).
+   * Cancels the newest uncommitted soft-commit action (triggered by Z key),
+   * including commits currently awaiting backup before the cloud write fires.
    * @returns {boolean} true if an action was cancelled
    */
   cancelNewestCommit() {
     const pending = this.state.pendingCommits || [];
-    if (pending.length === 0) return false;
-
-    const newest = pending[0];
-    return this.cancelCommitById(newest.id);
+    if (pending.length > 0) {
+      return this.cancelCommitById(pending[0].id);
+    }
+    const preparing = this.inFlightCommits.find(c => c.status === 'preparing' && !c.cancelled);
+    if (preparing) {
+      return this.cancelCommitById(preparing.id);
+    }
+    return false;
   }
 
   /**
-   * Cancels a specific soft-commit by ID.
+   * Cancels a specific soft-commit by ID (either during 3s countdown or during backup wait).
    * @param {string} commitId
    * @returns {boolean}
    */
   cancelCommitById(commitId) {
     const pending = this.state.pendingCommits || [];
-    const target = pending.find(c => c.id === commitId);
-    if (!target) return false;
-
-    clearTimeout(target.timerId);
-    const nextPending = pending.filter(c => c.id !== commitId);
-    this.set({ pendingCommits: nextPending });
-
-    if (typeof target.cancelCallback === 'function') {
-      target.cancelCallback(target);
+    const targetPending = pending.find(c => c.id === commitId);
+    if (targetPending) {
+      clearTimeout(targetPending.timerId);
+      targetPending.cancelled = true;
+      targetPending.status = 'cancelled';
+      const nextPending = pending.filter(c => c.id !== commitId);
+      this.set({ pendingCommits: nextPending });
+      if (typeof targetPending.cancelCallback === 'function') {
+        targetPending.cancelCallback(targetPending);
+      }
+      return true;
     }
-    return true;
+
+    const targetInFlight = this.inFlightCommits.find(c => c.id === commitId && c.status === 'preparing' && !c.cancelled);
+    if (targetInFlight) {
+      targetInFlight.cancelled = true;
+      targetInFlight.status = 'cancelled';
+      this.inFlightCommits = this.inFlightCommits.filter(c => c.id !== commitId);
+      if (typeof targetInFlight.cancelCallback === 'function') {
+        targetInFlight.cancelCallback(targetInFlight);
+      }
+      return true;
+    }
+
+    return false;
   }
 
   /**
-   * Cancels all pending soft-commit timers (e.g. before window closes).
+   * Cancels all pending soft-commit timers and backup-waiting commits (e.g. before logout/close).
    */
   cancelAllCommits() {
     const pending = this.state.pendingCommits || [];
     pending.forEach(c => {
       clearTimeout(c.timerId);
+      c.cancelled = true;
+      c.status = 'cancelled';
+      if (typeof c.cancelCallback === 'function') {
+        c.cancelCallback(c);
+      }
+    });
+    const preparing = this.inFlightCommits.filter(c => c.status === 'preparing' && !c.cancelled);
+    this.inFlightCommits = this.inFlightCommits.filter(c => c.status !== 'preparing');
+    preparing.forEach(c => {
+      c.cancelled = true;
+      c.status = 'cancelled';
       if (typeof c.cancelCallback === 'function') {
         c.cancelCallback(c);
       }
@@ -476,12 +828,14 @@ class Store {
 
   stageBatchAction(song, action = 'unlike', playlistId = null, targetName = '') {
     if (!song || this.state.destructiveFrozen || this.state.hasUnknownResult) return false;
+    if (this.state.offlineMode && action !== 'remove_hybrid_tracks') return false;
     const resolved = this.resolveDestructiveAction(song, playlistId);
     if (!resolved.valid || resolved.action !== action || String(resolved.playlistId) !== String(playlistId)) {
       return false;
     }
     const queue = [...(this.state.batchQueue || [])];
-    const exists = queue.some(item => String(item.song.id) === String(song.id) && String(item.playlistId) === String(playlistId) && item.action === action);
+    const songIdentity = getTrackKey(song) || String(song.id);
+    const exists = queue.some(item => (getTrackKey(item.song) || String(item.song.id)) === songIdentity && String(item.playlistId) === String(playlistId) && item.action === action);
     if (!exists) {
       queue.push({
         song,
@@ -496,9 +850,14 @@ class Store {
     return false;
   }
 
-  unstageBatchAction(songId, playlistId = null, action = null) {
+  unstageBatchAction(songIdOrKey, playlistId = null, action = null) {
+    const targetKey = String(songIdOrKey);
     const queue = (this.state.batchQueue || []).filter(item => {
-      const matchSong = String(item.song.id) === String(songId);
+      const itemTk = getTrackKey(item.song);
+      const isHybrid = item.action === 'remove_hybrid_tracks';
+      const matchSong = isHybrid
+        ? (itemTk === targetKey || (Number(item.song?.id) > 0 && String(item.song.id) === targetKey))
+        : (String(item.song?.id) === targetKey || itemTk === targetKey);
       if (!matchSong) return true;
       if (playlistId !== null && playlistId !== undefined && String(item.playlistId) !== String(playlistId)) {
         return true;
@@ -554,9 +913,17 @@ class Store {
     const likedPlId = likedPl ? String(likedPl.id) : null;
     const targetPid = playlistId !== null && playlistId !== undefined ? String(playlistId) : (action === 'unlike' && likedPlId ? likedPlId : null);
 
+    const isHybridAction = action === 'remove_hybrid_tracks';
+    const matchesSong = (song) => {
+      const tk = getTrackKey(song);
+      if (tk && idSet.has(tk)) return true;
+      if (isHybridAction) return false;
+      return Number(song?.id) > 0 && idSet.has(String(song.id));
+    };
+
     // 1. Catalog precision filter: only remove the copy in this playlist
     const nextCatalog = this.state.catalog.filter(song => {
-      if (!idSet.has(String(song.id))) return true;
+      if (!matchesSong(song)) return true;
       if (targetPid !== null) {
         return String(song.source_playlist_id) !== targetPid;
       }
@@ -572,13 +939,13 @@ class Store {
     const removedBeforeIndex = currentDeck
       .slice(0, currentIndex)
       .filter(song => {
-        if (!idSet.has(String(song.id))) return false;
+        if (!matchesSong(song)) return false;
         if (targetPid !== null) return String(song.source_playlist_id) === targetPid;
         return true;
       }).length;
 
     const nextDeck = currentDeck.filter(song => {
-      if (!idSet.has(String(song.id))) return true;
+      if (!matchesSong(song)) return true;
       if (targetPid !== null) {
         return String(song.source_playlist_id) !== targetPid;
       }
@@ -592,7 +959,7 @@ class Store {
 
     // 3. BatchQueue precision cleanup
     const nextBatch = (this.state.batchQueue || []).filter(item => {
-      const matchSong = idSet.has(String(item.song.id));
+      const matchSong = matchesSong(item.song);
       if (!matchSong) return true;
       if (targetPid !== null && String(item.playlistId) !== targetPid) {
         return true;
@@ -602,6 +969,13 @@ class Store {
       }
       return false;
     });
+
+    // Update likedSongIds if unlike
+    if (action === 'unlike' || (likedPlId && targetPid === likedPlId)) {
+      const nextLiked = new Set(this.state.likedSongIds || []);
+      idSet.forEach(id => nextLiked.delete(id));
+      this.set({ likedSongIds: nextLiked });
+    }
 
     this.saveBatchQueue(nextBatch);
     this.set({
@@ -619,6 +993,7 @@ class Store {
       currentSongKey: this.reviewSongKey(nextDeck[newIndex], currentPid),
       keptIds: Array.from(this.state.keptIds || []),
       skippedIds: Array.from(this.state.skippedIds || []),
+      relistenIds: Array.from(this.state.relistenIds || []),
       updatedAt: Date.now(),
     });
 
@@ -656,6 +1031,7 @@ class Store {
         localStorage.removeItem(key);
       }
     } catch {}
+    this.saveReviewProgress(playlistId, 'skipped', 'shared', {skippedIds: []});
     this.set({
       deckIndex: 0,
       keptIds: new Set(),

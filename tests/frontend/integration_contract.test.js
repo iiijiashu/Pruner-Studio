@@ -243,6 +243,7 @@ export async function runIntegrationContractTests() {
     api.createPlaylist = async () => ({
       ok: true,
       data: {
+        playlist_id: 99,
         successful_ids: [1],
         failed_items: [{ id: 2, code: 'UPSTREAM_REJECTED', reason: 'rejected' }],
         unknown_items: [],
@@ -261,8 +262,18 @@ export async function runIntegrationContractTests() {
     await createHandler();
     assert.deepEqual([...state.get('catalogSelectedIds')], ['10:2']);
     assert.equal(warningTitle, '歌单已创建，部分歌曲未添加');
+    const observed = [];
+    api.createPlaylist = async () => ({ok:false, status:0, error:{code:'NETWORK_ERROR'}});
+    api.getPendingOperations = async () => { observed.push('pending'); return {ok:true,data:{operations:[]}}; };
+    cloudManager.loadPlaylists = async () => { observed.push('refresh'); };
+    modal.close = () => { observed.push('close'); };
+    toast.warning = (title, message) => { warningTitle = title; assert.match(message, /已确认添加 0 首，剩余 1 首结果未知/); };
+    await createHandler();
+    assert.equal(warningTitle, '创建/加歌结果待核对');
+    assert.deepEqual(observed, ['pending','close','refresh']);
   } finally {
     globalThis.document = originalDocument;
+    api.getPendingOperations = originalPendingAfterIgnore;
     api.createPlaylist = originalCreatePlaylist;
     catalogManager.render = originalCatalogRender;
     cloudManager.loadPlaylists = originalLoadPlaylists;

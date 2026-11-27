@@ -1,51 +1,17 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-visual-mode="soft_dynamic">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Pruner Studio</title>
-  <meta name="description" content="在本机快速整理自己的网易云音乐歌单">
-  <link rel="stylesheet" href="css/main.css">
+  <meta name="description" content="本机网易云音乐听歌与安全歌单清理工具">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'%3E%3Crect x='1' y='1' width='22' height='22' rx='5.5' fill='%23141518' stroke='%23f5f5f7' stroke-opacity='0.22' stroke-width='1'/%3E%3Ccircle cx='12' cy='12' r='7.4' stroke='%23f5f5f7' stroke-opacity='0.88' stroke-width='1.35'/%3E%3Ccircle cx='12' cy='12' r='4.7' stroke='%2362a368' stroke-width='1.4'/%3E%3Cpolygon points='10.8,9.4 15.2,12 10.8,14.6' fill='%23f5f5f7'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/main.css?v=w4">
 </head>
 <body>
 
-  <!-- Ambient Cover Field Signature Backdrop -->
+  <!-- Ultra-Lightweight Static Top Ambient Radial Tint (Zero full-screen blur) -->
   <div id="ambient-cover-field" class="ambient-cover-field" aria-hidden="true"></div>
-
-  <!-- Application Header -->
-  <header class="app-header">
-    <div class="brand-section">
-      <span class="brand-title">Pruner Studio</span>
-      <span class="brand-badge">本机运行</span>
-    </div>
-
-    <!-- Navigation Tabs: Chinese-First (整理 / 曲库 / 云端) -->
-    <nav class="nav-tabs" role="tablist" aria-label="主导航">
-      <button class="nav-tab-btn active" data-tab="deck" role="tab" aria-selected="true" aria-controls="view-deck" id="tab-deck">
-        整理
-      </button>
-      <button class="nav-tab-btn" data-tab="catalog" role="tab" aria-selected="false" aria-controls="view-catalog" id="tab-catalog">
-        曲库
-      </button>
-      <button class="nav-tab-btn" data-tab="cloud" role="tab" aria-selected="false" aria-controls="view-cloud" id="tab-cloud">
-        云端
-      </button>
-    </nav>
-
-    <!-- Header Actions -->
-    <div class="header-actions">
-      <!-- Pending Actions Drawer Trigger -->
-      <button id="header-pending-btn" class="header-pending-btn" title="查看待执行的云端变更队列" aria-label="待执行队列">
-        <span>待执行</span>
-        <span id="header-pending-count" class="pending-count-badge">0</span>
-      </button>
-
-      <!-- User Account Status -->
-      <div id="user-status-container" class="header-user-status">
-        <button class="btn btn-primary btn-sm" id="header-login-btn">扫码登录</button>
-      </div>
-    </div>
-  </header>
 
   <!-- 0. IMMERSIVE UNAUTHENTICATED LOGIN SHELL -->
   <div id="unauthenticated-shell" class="unauthenticated-login-shell hidden">
@@ -53,16 +19,28 @@
       <div class="login-shell-left">
         <div class="login-brand-display">Pruner Studio</div>
         <div class="login-statement">
-          让曲库只留下<br>你还会再听的歌。
+          让日常听歌更安静，<br>让曲库只留下还会再听的歌。
         </div>
-        <div class="login-tagline">private listening desk</div>
+        <div class="login-tagline">选择任意起点立即开始，无需强制登录</div>
+
+        <div class="onboarding-quick-starts" role="group" aria-label="四路免登录快速起点">
+          <button type="button" id="shell-guest-local" class="btn btn-primary">扫描本地音乐目录</button>
+          <button type="button" id="shell-start-protocol" class="btn btn-secondary">连接 OpenSubsonic / WebDAV</button>
+          <button type="button" id="shell-start-resolver" class="btn btn-secondary">配置外部 Resolver v2 / Sidecar</button>
+          <button type="button" popovertarget="account-hub" class="btn btn-ghost">已保存账号与多平台中心</button>
+        </div>
+        <!-- Offline Read-Only Catalog Entry (populated if cached accounts exist) -->
+        <div id="shell-offline-entry" class="shell-offline-entry hidden">
+          <div class="shell-offline-label">本地已有缓存曲库，无需联网即可只读浏览：</div>
+          <div id="shell-offline-accounts-list" class="shell-offline-accounts"></div>
+        </div>
       </div>
 
       <div class="login-shell-right">
         <div id="shell-qr-image-container" class="qr-code-box">
           <div class="spinner"></div>
         </div>
-        <p id="shell-qr-status-message" style="font-size: var(--text-xs); color: var(--text-ash);">
+        <p id="shell-qr-status-message" class="qr-status-text">
           请使用网易云音乐手机 App 扫码确认
         </p>
         <button id="shell-qr-reload-btn" class="btn btn-secondary btn-sm">重新生成二维码</button>
@@ -70,274 +48,1544 @@
     </div>
   </div>
 
-  <!-- AUTHENTICATED MAIN VIEWPORT -->
-  <main id="authenticated-main-viewport" class="main-viewport">
+  <!-- AUTHENTICATED / OFFLINE APP SHELL (Left Collapsible Rail + Main Content + Global Bottom Player) -->
+  <div id="app-shell-root" class="app-shell">
 
-    <!-- 1. REVIEW WORKSPACE (整理) -->
-    <section id="view-deck" class="view-panel active" role="tabpanel" aria-labelledby="tab-deck">
-      <div class="deck-view-wrapper">
+    <!-- Mobile / Narrow-Viewport Backdrop for Slide-Over Rail -->
+    <div id="mobile-rail-backdrop" class="mobile-rail-backdrop" aria-hidden="true"></div>
 
-        <!-- Dense Top Controls Toolbar -->
-        <div class="deck-toolbar">
-          <div class="deck-toolbar-left">
-            <label for="deck-playlist-select" class="sr-only">选择歌单</label>
-            <select id="deck-playlist-select" class="deck-select-sm" aria-label="选择歌单">
-              <option value="">我喜欢的音乐</option>
-            </select>
-
-            <label for="deck-filter-select" class="sr-only">事实筛选</label>
-            <select id="deck-filter-select" class="deck-select-sm" aria-label="事实筛选">
-              <option value="undecided">筛选: 未决定</option>
-              <option value="skipped">筛选: 已跳过</option>
-              <option value="all">筛选: 全部歌曲</option>
-              <option value="rules">筛选: 命中规则</option>
-              <option value="vip">筛选: VIP歌曲</option>
-              <option value="unavailable">筛选: 无音源</option>
-              <option value="short">筛选: 短于90秒</option>
-              <option value="long">筛选: 长于5分钟</option>
-            </select>
-
-            <label for="deck-order-select" class="sr-only">排序顺序</label>
-            <select id="deck-order-select" class="deck-select-sm" aria-label="排序顺序">
-              <option value="recent">排序: 最新添加</option>
-              <option value="oldest">排序: 最早添加</option>
-              <option value="title">排序: 歌名 A-Z</option>
-              <option value="duration">排序: 时长由长到短</option>
-            </select>
-          </div>
-
-          <div class="deck-toolbar-right">
-            <button id="deck-reset-progress-btn" class="btn btn-ghost btn-sm" title="重置当前歌单与筛选条件的整理进度">重置进度</button>
+    <!-- Collapsible Left Navigation Rail (208px desktop / 64px compact / slide-over drawer <= 1024px) -->
+    <aside id="app-left-rail" class="app-left-rail" aria-label="主导航栏">
+      <div class="rail-header">
+        <div class="brand-section">
+          <span class="brand-mark" data-icon-slot="disc" data-icon-size="18"></span>
+          <div class="brand-text-group">
+            <span class="brand-title">Pruner Studio</span>
           </div>
         </div>
+        <button id="rail-collapse-btn" class="btn btn-ghost btn-icon rail-collapse-btn" title="折叠 / 展开侧边栏" aria-label="折叠或展开侧边栏" aria-expanded="true">
+          <span data-icon-slot="sidebar" data-icon-size="16"></span>
+        </button>
+      </div>
 
-        <!-- Progress & Remaining Track Bar -->
-        <div class="deck-progress-bar-container">
-          <div class="deck-progress-info-row">
-            <span class="numeral-mono">进度 <strong id="deck-count-display">0 / 0</strong></span>
-            <span id="deck-remaining-display" class="numeral-mono">剩余 0 首</span>
-          </div>
-          <div class="deck-progress-track">
-            <div id="deck-progress-bar-fill" class="deck-progress-fill"></div>
-          </div>
-        </div>
+      <nav class="rail-nav" role="tablist" aria-label="主导航" aria-orientation="vertical">
+        <button class="nav-tab-btn active" data-tab="discover" role="tab" aria-selected="true" aria-controls="view-discover" id="tab-discover" title="发现">
+          <span class="nav-icon" data-icon-slot="compass" data-icon-size="17"></span>
+          <span class="nav-label">发现</span>
+        </button>
+        <button class="nav-tab-btn" data-tab="catalog" role="tab" aria-selected="false" aria-controls="view-catalog" id="tab-catalog" title="音乐库">
+          <span class="nav-icon" data-icon-slot="library" data-icon-size="17"></span>
+          <span class="nav-label">音乐库</span>
+        </button>
+        <button class="nav-tab-btn" data-tab="history" role="tab" aria-selected="false" aria-controls="view-history" id="tab-history" title="播放历史">
+          <span class="nav-icon" data-icon-slot="clock" data-icon-size="17"></span>
+          <span class="nav-label">播放历史</span>
+        </button>
+        <button class="nav-tab-btn" data-tab="deck" role="tab" aria-selected="false" aria-controls="view-deck" id="tab-deck" title="歌单清理">
+          <span class="nav-icon" data-icon-slot="layers" data-icon-size="17"></span>
+          <span class="nav-label">歌单清理</span>
+        </button>
+        <button class="nav-tab-btn" data-tab="cloud" role="tab" aria-selected="false" aria-controls="view-cloud" id="tab-cloud" title="设置">
+          <span class="nav-icon" data-icon-slot="settings" data-icon-size="17"></span>
+          <span class="nav-label">设置</span>
+        </button>
+      </nav>
 
-        <!-- 42% / 58% Review Workspace Layout Container -->
-        <div id="deck-workspace-container">
-          <!-- Populated by deck.js -->
-        </div>
+      <div id="rail-playlists-section" class="rail-playlists-section" aria-label="我的歌单">
+        <button type="button" id="rail-playlists-toggle" class="rail-playlists-header" aria-expanded="true" aria-controls="rail-playlists-list">
+          <span>我的歌单</span>
+          <span class="rail-playlists-chevron" data-icon-slot="chevron-down" data-icon-size="13"></span>
+        </button>
+        <div id="rail-playlists-list" class="rail-playlists-list"></div>
+      </div>
 
-        <!-- Bottom Action Bar -->
-        <div class="deck-bottom-bar">
-          <button id="deck-mode-toggle" class="deck-mode-indicator" title="切换整理提交模式">模式: 立即同步 (3秒)</button>
+      <div class="rail-status-bar">
+        <span class="rail-status-dot" aria-hidden="true"></span>
+        <span class="brand-badge">本机运行</span>
+      </div>
+    </aside>
 
-          <div class="deck-actions-group">
-            <button id="deck-dislike-btn" class="btn btn-prune" title="取消喜欢 / 移出歌单 [← / A]">
-              <span class="btn-label">取消喜欢</span>
+    <!-- Right Main Column: Top Utility Bar + Active Workspace -->
+    <div class="app-content-column">
+
+      <header class="app-header">
+        <div class="app-header-inner">
+          <div class="header-left">
+            <button id="mobile-menu-btn" class="btn btn-ghost btn-icon mobile-menu-btn" aria-label="打开导航菜单" aria-expanded="false">
+              <span data-icon-slot="menu" data-icon-size="18"></span>
             </button>
-            <button id="deck-undo-btn" class="btn btn-secondary" title="撤销上一步操作 [Z]">撤销</button>
-            <button id="deck-skip-btn" class="btn btn-secondary" title="跳至本轮末尾 [Space]">跳至末尾</button>
-            <button id="deck-play-btn" class="btn btn-primary" title="播放 / 暂停 [P]">▶</button>
-            <button id="deck-chorus-jump-btn" class="btn btn-secondary" title="跳转副歌 [C / ↑]">副歌</button>
-            <button id="deck-like-btn" class="btn btn-keep" title="保留歌曲 [→ / D]">保留</button>
+
+            <button id="header-search-trigger" class="header-search-trigger" title="打开全局搜索 (Ctrl+K)" aria-label="打开全局搜索">
+              <span data-icon-slot="search" data-icon-size="15"></span>
+              <span class="search-trigger-placeholder">搜索音乐、歌手、专辑...</span>
+              <kbd class="kbd">Ctrl K</kbd>
+            </button>
           </div>
-        </div>
 
-        <!-- Keyboard Shortcuts Legend Bar -->
-        <div class="deck-shortcuts-legend">
-          <span><kbd class="kbd">←</kbd> 或 <kbd class="kbd">A</kbd> 移除</span>
-          <span><kbd class="kbd">→</kbd> 或 <kbd class="kbd">D</kbd> 保留</span>
-          <span><kbd class="kbd">Space</kbd> 跳至末尾</span>
-          <span><kbd class="kbd">P</kbd> 播放/暂停</span>
-          <span><kbd class="kbd">C</kbd> 或 <kbd class="kbd">↑</kbd> 副歌</span>
-          <span><kbd class="kbd">Z</kbd> 撤销</span>
-        </div>
-      </div>
-    </section>
+          <div class="header-actions">
+            <button id="header-pending-btn" class="header-pending-btn" title="查看待执行的云端变更队列" aria-label="待执行队列">
+              <span>待执行</span>
+              <span id="header-pending-count" class="pending-count-badge">0</span>
+            </button>
 
-    <!-- 2. CATALOG WORKSPACE (曲库) -->
-    <section id="view-catalog" class="view-panel" role="tabpanel" aria-labelledby="tab-catalog">
-      <div id="catalog-view-panel" class="catalog-container">
-
-        <!-- Toolbar & Filter Chips -->
-        <div class="catalog-toolbar">
-          <div class="catalog-search-row">
-            <div class="search-input-wrapper">
-              <input type="text" id="catalog-search-input" class="input-text" placeholder="搜索歌曲标题、歌手、专辑..." aria-label="搜索曲库">
-              <button id="catalog-search-clear" class="search-clear-btn" aria-label="清空搜索">&times;</button>
-            </div>
-
-            <div class="catalog-toolbar-actions">
-              <label for="catalog-playlist-filter" class="sr-only">选择歌单</label>
-              <select id="catalog-playlist-filter" class="deck-select-sm" aria-label="按歌单筛选">
-                <option value="all">全部歌单</option>
-              </select>
-
-              <!-- View Switcher -->
-              <div class="view-switcher-group">
-                <button id="catalog-view-table-btn" class="view-switch-btn active" title="表格视图">表格</button>
-                <button id="catalog-view-cards-btn" class="view-switch-btn" title="卡片视图">卡片</button>
-              </div>
-
-              <!-- Open Rules Drawer Button -->
-              <button id="catalog-open-rules-btn" class="btn btn-secondary btn-sm" title="打开规则筛选">规则筛选</button>
+            <div id="user-status-container" class="header-user-status">
+              <button class="btn btn-primary btn-sm" id="header-login-btn">账号与平台</button>
             </div>
           </div>
-
-          <div class="catalog-filter-chips">
-            <button class="filter-chip active" data-filter="all">全部曲目</button>
-            <button class="filter-chip" data-filter="liked">我喜欢的音乐</button>
-            <button class="filter-chip" data-filter="unavailable">无音源</button>
-            <button class="filter-chip" data-filter="vip">VIP曲目</button>
-            <button class="filter-chip" data-filter="alternative">替代音源</button>
-            <button class="filter-chip" data-filter="rules">命中规则</button>
-          </div>
         </div>
+      </header>
 
-        <!-- Bulk Selection Action Bar -->
-        <div id="catalog-selection-bar" class="catalog-selection-bar hidden">
-          <div class="selection-info">
-            <span id="catalog-selection-count">已选择 0 首歌曲</span>
-          </div>
-          <div class="selection-actions">
-            <button id="catalog-select-all-btn" class="btn btn-ghost btn-sm">全选筛选结果</button>
-            <button id="catalog-clear-select-btn" class="btn btn-ghost btn-sm">清空选择</button>
-            <button id="catalog-stage-prune-btn" class="btn btn-danger btn-sm">加入待处理队列</button>
-            <button id="catalog-create-playlist-btn" class="btn btn-primary btn-sm">基于选中创建歌单</button>
-          </div>
-        </div>
+      <!-- MAIN VIEWPORT -->
+      <main id="authenticated-main-viewport" class="main-viewport">
 
-        <!-- Table View Wrapper -->
-        <div id="catalog-table-wrapper" class="catalog-table-container">
-          <table class="catalog-table">
-            <thead>
-              <tr>
-                <th class="col-check"><input type="checkbox" id="catalog-select-all" class="checkbox-custom" aria-label="全选当前页"></th>
-                <th class="col-cover">封面</th>
-                <th class="col-title sortable" data-sort="title">歌曲标题</th>
-                <th class="col-artist sortable" data-sort="artist">歌手</th>
-                <th class="col-album sortable" data-sort="album">专辑</th>
-                <th class="col-duration sortable" data-sort="duration">时长</th>
-                <th class="col-status">状态</th>
-                <th class="col-actions">操作</th>
-              </tr>
-            </thead>
-            <tbody id="catalog-table-body">
-              <!-- Populated by catalog.js -->
-            </tbody>
-          </table>
-        </div>
+        <!-- 1. DISCOVER (发现 - Default Online Landing) -->
+        <section id="view-discover" class="view-panel active" role="tabpanel" aria-labelledby="tab-discover">
+          <button id="discover-resume" class="btn btn-secondary" hidden></button>
+          <div class="discover-container">
 
-        <!-- Cards View Wrapper (5 Columns Grid) -->
-        <div id="catalog-cards-wrapper" class="hidden">
-          <div id="catalog-cards-grid" class="catalog-cards-grid">
-            <!-- Populated by catalog.js -->
-          </div>
-        </div>
-
-        <!-- Pagination Bar -->
-        <div class="catalog-pagination">
-          <span id="catalog-pagination-info">显示 0 - 0 首 / 共 0 首</span>
-          <div class="pagination-controls">
-            <button id="catalog-page-prev" class="page-btn" disabled>上一页</button>
-            <span id="catalog-page-current" style="padding: 0 var(--space-2);">第 1 / 1 页</span>
-            <button id="catalog-page-next" class="page-btn" disabled>下一页</button>
-          </div>
-        </div>
-
-      </div>
-    </section>
-
-    <!-- 3. CLOUD WORKSPACE (云端) -->
-    <section id="view-cloud" class="view-panel" role="tabpanel" aria-labelledby="tab-cloud">
-      <div id="cloud-view-panel" class="cloud-container">
-
-        <!-- Synced Playlists Card -->
-        <div class="cloud-section-card">
-          <div class="cloud-section-header">
-            <div class="cloud-section-title">已同步歌单</div>
-          </div>
-          <div id="cloud-playlists-grid" class="playlist-grid">
-            <!-- Populated by cloud.js -->
-          </div>
-        </div>
-
-        <!-- Grouped Pending Batch Actions -->
-        <div class="cloud-section-card">
-          <div class="cloud-section-header">
-            <div class="cloud-section-title">
-              <span>待执行变更</span>
-              <span id="cloud-batch-total-count" class="badge badge-danger">0 首待处理</span>
-            </div>
-            <button id="cloud-open-batch-confirm-btn" class="btn btn-danger btn-sm" disabled>确认执行云端变更</button>
-          </div>
-          <div id="cloud-batch-groups-container" class="batch-groups-list">
-            <!-- Populated by cloud.js -->
-          </div>
-        </div>
-
-        <!-- Collapsible "More Tools" Accordion -->
-        <div class="cloud-section-card" style="padding: 0; background: transparent; border: none;">
-          <button id="cloud-more-tools-toggle" class="cloud-accordion-toggle">
-            <span>更多工具 (本地备份 · 曲库导入 · 操作记录)</span>
-            <span class="accordion-chevron">›</span>
-          </button>
-          <div id="cloud-more-tools-panel" class="cloud-accordion-panel">
-            <div class="tools-grid">
-              <div class="tool-card">
-                <div class="tool-card-header">
-                  <div class="tool-card-title">本地备份</div>
-                  <button id="cloud-backup-btn" class="btn btn-secondary btn-sm">导出 JSON 快照</button>
+            <!-- Top Balanced 2-Column Listening Hero Row (私人漫游 + 心动电台) -->
+            <div class="discover-hero-grid">
+              <!-- 私人漫游 Card -->
+              <div class="discover-hero-card discover-fm-card">
+                <div class="discover-card-kicker">
+                  <span data-icon-slot="radio" data-icon-size="14"></span>
+                  <span>私人漫游</span>
                 </div>
-                <p class="tool-card-desc">
-                  导出完整的本地曲库与歌单快照，防止误操作。
-                </p>
+                <div id="discover-fm-body" class="discover-fm-body">
+                  <!-- Populated by discover.js -->
+                </div>
               </div>
 
-              <div class="tool-card">
-                <div class="tool-card-header">
-                  <div class="tool-card-title">导入曲库</div>
-                  <button id="cloud-open-import-btn" class="btn btn-secondary btn-sm">导入 JSON / CSV</button>
+              <!-- True Heartbeat Smart Radio Card (0%-100% Continuous Exploration + Living Acoustic Orb) -->
+              <div class="discover-hero-card discover-action-card">
+                <div class="discover-card-kicker">
+                  <span data-icon-slot="sparkles" data-icon-size="14"></span>
+                  <span>心动电台</span>
                 </div>
-                <p class="tool-card-desc">
-                  恢复或合并之前导出的歌单或 CSV 归档至本地缓存。
-                </p>
+                <div class="discover-radio-body">
+                  <div id="discover-tuner-stage" class="discover-orb-stage" role="slider" tabindex="0" aria-label="心动电台模拟调频表盘" aria-valuemin="0" aria-valuemax="100" aria-valuenow="40" title="拖动或点击表盘调节熟歌与新声比例">
+                    <svg id="discover-acoustic-orb" class="discover-tuner-dial" viewBox="0 0 160 160" width="144" height="144" shape-rendering="geometricPrecision" data-radio-playing="false" data-orb-paused="false" aria-hidden="true">
+                      <defs>
+                        <linearGradient id="discover-tuner-face-grad" x1="18%" y1="12%" x2="84%" y2="88%">
+                          <stop offset="0%" stop-color="var(--tuner-face-start)"></stop>
+                          <stop offset="100%" stop-color="var(--tuner-face-end)"></stop>
+                        </linearGradient>
+                      </defs>
+                      <circle class="discover-tuner-face" cx="80" cy="80" r="76" fill="url(#discover-tuner-face-grad)"></circle>
+                      <circle class="discover-tuner-inner-ring" cx="80" cy="80" r="70"></circle>
+                      <path class="discover-tuner-track" d="M 41.1 118.9 A 55 55 0 1 1 118.9 118.9"></path>
+                      <path id="discover-tuner-arc" class="discover-tuner-arc" d="M 41.1 118.9 A 55 55 0 1 1 118.9 118.9" stroke-dasharray="259.18" stroke-dashoffset="155.51"></path>
+                      <g id="discover-tuner-ticks"></g>
+                      <text class="discover-tuner-scale-label" x="48" y="106">0</text>
+                      <text class="discover-tuner-scale-label" x="80" y="34">50</text>
+                      <text class="discover-tuner-scale-label" x="112" y="106">100</text>
+                      <g id="discover-tuner-eq" aria-hidden="true">
+                        <rect class="discover-tuner-eq-bar" x="69" y="51" width="2.2" height="8" rx="1"></rect>
+                        <rect class="discover-tuner-eq-bar" x="74" y="48" width="2.2" height="11" rx="1"></rect>
+                        <rect class="discover-tuner-eq-bar" x="79" y="46" width="2.2" height="13" rx="1"></rect>
+                        <rect class="discover-tuner-eq-bar" x="84" y="49" width="2.2" height="10" rx="1"></rect>
+                        <rect class="discover-tuner-eq-bar" x="89" y="52" width="2.2" height="7" rx="1"></rect>
+                      </g>
+                      <g id="discover-tuner-needle" class="discover-tuner-needle-group" transform="rotate(-27 80 80)">
+                        <polygon class="discover-tuner-needle-tail" points="78.5,80 81.5,80 80.7,94 79.3,94"></polygon>
+                        <polygon class="discover-tuner-needle-main" points="78.3,80 81.7,80 80.5,25 79.5,25"></polygon>
+                      </g>
+                      <circle class="discover-tuner-hub" cx="80" cy="80" r="7.5"></circle>
+                      <circle id="discover-tuner-led" class="discover-tuner-led" cx="80" cy="80" r="2.8"></circle>
+                      <rect class="discover-tuner-plate" x="45" y="114" width="70" height="20" rx="10"></rect>
+                      <text id="discover-tuner-value" class="discover-tuner-readout" x="80" y="124.5">FM · 40%</text>
+                    </svg>
+                  </div>
+                  <div class="discover-radio-controls-col">
+                    <div class="discover-action-title">想听多少新歌？</div>
+                    <div class="discover-explore-control">
+                      <div class="discover-explore-header">
+                        <span>熟歌</span>
+                        <span id="discover-explore-ratio-label" class="discover-explore-value">40% · 熟歌与新声均衡</span>
+                        <span>新声</span>
+                      </div>
+                      <input type="range" id="discover-explore-slider" class="discover-explore-slider" min="0" max="100" step="1" value="40" aria-label="熟歌与探索比例">
+                      <div class="discover-explore-ticks" aria-hidden="true">
+                        <span>0%</span>
+                        <span>50%</span>
+                        <span>100%</span>
+                      </div>
+                    </div>
+                    <div id="discover-smart-radio-tags" class="discover-radio-tags"></div>
+                    <div class="discover-action-footer">
+                      <button id="discover-heartbeat-btn" class="btn btn-primary btn-sm">
+                        <span data-icon-slot="play" data-icon-size="14"></span>
+                        <span class="btn-label">开启心动电台</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <!-- Operations History Table -->
-            <div class="cloud-section-card">
-              <div class="cloud-section-header">
-                <div class="cloud-section-title">操作记录 (最近100条)</div>
+            <!-- Compact Local Listening Insights Bar -->
+            <div id="discover-insights-bar" class="discover-insights-bar" aria-label="本地听歌洞察">
+              <!-- Populated by discover.js -->
+            </div>
+
+            <!-- Dusty Gems (沉睡宝藏) -->
+            <div id="discover-dusty-section" class="discover-section-card">
+              <div class="discover-section-header">
+                <div class="discover-section-title-group">
+                  <h2 class="discover-section-title">沉睡宝藏</h2>
+                  <span class="discover-section-subtitle">唤醒你曲库中超过 30 天未听或从未听过的好歌</span>
+                </div>
+                <div class="discover-section-actions">
+                  <button id="discover-dusty-play-all" class="btn btn-secondary btn-sm" disabled>
+                    <span data-icon-slot="shuffle" data-icon-size="14"></span>
+                    <span>均衡随机播</span>
+                  </button>
+                  <span class="toolbar-divider" aria-hidden="true"></span>
+                  <button id="discover-dusty-refresh" class="btn btn-ghost btn-sm" title="换一批沉睡宝藏">
+                    <span data-icon-slot="refresh" data-icon-size="14"></span>
+                    <span class="btn-label">换一批</span>
+                  </button>
+                  <div class="discover-dusty-stepper-group" role="group" aria-label="浏览沉睡宝藏">
+                    <button type="button" id="discover-dusty-prev" class="discover-dusty-stepper" title="向左滑动" aria-label="向左浏览沉睡宝藏" disabled>
+                      <span class="icon-flip-x" data-icon-slot="chevron-right" data-icon-size="14"></span>
+                    </button>
+                    <button type="button" id="discover-dusty-next" class="discover-dusty-stepper" title="向右滑动" aria-label="向右浏览沉睡宝藏" disabled>
+                      <span data-icon-slot="chevron-right" data-icon-size="14"></span>
+                    </button>
+                  </div>
+                </div>
               </div>
-              <table class="ops-log-table">
+              <div id="discover-dusty-carousel" class="discover-dusty-carousel" data-can-scroll-left="false" data-can-scroll-right="false">
+                <div id="discover-dusty-grid" class="discover-dusty-strip">
+                  <!-- Populated by discover.js -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Daily Recommend 30 Tracks -->
+            <div class="discover-section-card">
+              <div class="discover-section-header">
+                <div class="discover-section-title-group">
+                  <h2 class="discover-section-title">每日推荐</h2>
+                  <span class="discover-section-subtitle">精选 30 首 · 支持明确标记“不再推荐”</span>
+                </div>
+                <div class="discover-section-actions">
+                  <button id="discover-daily-play-all" class="btn btn-primary btn-sm" disabled>
+                    <span data-icon-slot="play" data-icon-size="14"></span>
+                    <span>播放全部</span>
+                  </button>
+                  <button id="discover-shuffle" class="btn btn-secondary btn-sm">随机播放</button>
+                  <span class="toolbar-divider" aria-hidden="true"></span>
+                  <button id="discover-history" class="btn btn-ghost btn-sm">历史日推</button>
+                  <button id="discover-explore" class="btn btn-ghost btn-sm">换一批探索</button>
+                  <button id="discover-daily-refresh" class="btn btn-ghost btn-sm" title="刷新每日推荐">
+                    <span data-icon-slot="refresh" data-icon-size="14"></span>
+                    <span>检查更新</span>
+                  </button>
+                </div>
+              </div>
+              <div id="discover-extra" aria-live="polite"></div>
+              <div id="discover-daily-notice" class="discover-degraded-notice hidden"></div>
+              <div id="discover-daily-list" class="discover-daily-list">
+                <!-- Populated by discover.js -->
+              </div>
+            </div>
+
+            <!-- Recent Played -->
+            <div class="discover-section-card">
+              <div class="discover-section-header">
+                <div class="discover-section-title-group">
+                  <h2 class="discover-section-title">最近播放</h2>
+                  <span id="discover-recent-count" class="discover-section-subtitle"></span>
+                  <button class="btn btn-ghost btn-sm" id="discover-all-history">查看全部历史</button>
+                </div>
+              </div>
+              <div id="discover-recent-grid" class="discover-recent-grid">
+                <!-- Populated by discover.js -->
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- 2. CATALOG (音乐库) -->
+        <section id="view-catalog" class="view-panel" role="tabpanel" aria-labelledby="tab-catalog">
+          <div id="catalog-view-panel" class="catalog-container">
+
+            <!-- Library Sub-Navigation Pills -->
+            <div class="catalog-section-nav" role="group" aria-label="曲库分类">
+              <div class="catalog-section-tabs">
+                <button class="catalog-section-tab active" data-section="all" aria-pressed="true">全部曲库</button>
+                <button class="catalog-section-tab" data-section="liked" aria-pressed="false">我喜欢的音乐</button>
+                <button class="catalog-section-tab" data-section="self_created" aria-pressed="false">自建歌单</button>
+                <button class="catalog-section-tab" data-section="subscribed" aria-pressed="false">收藏歌单</button>
+                <button class="catalog-section-tab" data-section="cloud" aria-pressed="false">网易云云盘</button>
+                <button class="catalog-section-tab" data-section="local" aria-pressed="false">本地曲库</button>
+              </div>
+              <div class="catalog-context-actions">
+                <span id="catalog-readonly-badge" class="badge badge-muted hidden">只读播放</span>
+                <button id="catalog-play-all-btn" class="btn btn-primary btn-sm">
+                  <span data-icon-slot="play" data-icon-size="13"></span>
+                  <span>播放全部</span>
+                </button>
+                <button id="catalog-enter-deck-btn" class="btn btn-secondary btn-sm hidden">
+                  <span data-icon-slot="layers" data-icon-size="13"></span>
+                  <span>进入歌单清理</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Toolbar & Filter Chips -->
+            <div class="catalog-toolbar">
+              <div class="catalog-search-row">
+                <div class="search-input-wrapper">
+                  <input type="text" id="catalog-search-input" class="input-text" placeholder="搜索歌曲标题、歌手、专辑..." aria-label="搜索曲库">
+                  <button id="catalog-search-clear" class="search-clear-btn" aria-label="清空搜索">
+                    <span data-icon-slot="close" data-icon-size="13"></span>
+                  </button>
+                </div>
+
+                <div class="catalog-toolbar-actions">
+                  <label for="catalog-playlist-filter" class="sr-only">选择歌单</label>
+                  <select id="catalog-playlist-filter" class="deck-select-sm" aria-label="按歌单筛选">
+                    <option value="all">全部歌单</option>
+                  </select>
+
+                  <!-- View Switcher -->
+                  <div class="view-switcher-group">
+                    <button id="catalog-view-table-btn" class="view-switch-btn active" title="表格视图" aria-label="表格视图">
+                      <span data-icon-slot="table" data-icon-size="14"></span>
+                      <span>表格</span>
+                    </button>
+                    <button id="catalog-view-cards-btn" class="view-switch-btn" title="卡片视图" aria-label="卡片视图">
+                      <span data-icon-slot="grid" data-icon-size="14"></span>
+                      <span>卡片</span>
+                    </button>
+                  </div>
+
+                  <button id="catalog-open-rules-btn" class="btn btn-secondary btn-sm" title="打开规则筛选">
+                    <span data-icon-slot="filter" data-icon-size="13"></span>
+                    <span>规则筛选</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="catalog-filter-chips">
+                <button class="filter-chip active" data-filter="all">全部曲目</button>
+                <button class="filter-chip" data-filter="liked">我喜欢的音乐</button>
+                <button class="filter-chip" data-filter="relisten">稍后再听</button>
+                <button class="filter-chip" data-filter="unavailable">无音源</button>
+                <button class="filter-chip" data-filter="vip">VIP曲目</button>
+                <button class="filter-chip" data-filter="alternative">替代音源</button>
+                <button class="filter-chip" data-filter="rules">命中规则</button>
+              </div>
+            </div>
+
+            <!-- Bulk Selection Action Bar -->
+            <div id="catalog-selection-bar" class="catalog-selection-bar hidden">
+              <div class="selection-info">
+                <span id="catalog-selection-count">已选择 0 首歌曲</span>
+              </div>
+              <div class="selection-actions">
+                <button id="catalog-select-all-btn" class="btn btn-ghost btn-sm">全选筛选结果</button>
+                <button id="catalog-play-selection" class="btn btn-secondary btn-sm">播放选中</button>
+                <button id="catalog-clear-select-btn" class="btn btn-ghost btn-sm">清空选择</button>
+                <button id="catalog-stage-prune-btn" class="btn btn-danger btn-sm">加入待处理队列</button>
+                <button id="catalog-create-playlist-btn" class="btn btn-primary btn-sm">基于选中创建歌单</button>
+              </div>
+            </div>
+
+            <!-- Table View Wrapper -->
+            <section id="catalog-playlist-banner" class="library-banner" hidden></section>
+            <div id="catalog-table-wrapper" class="catalog-table-container">
+              <table class="catalog-table">
                 <thead>
                   <tr>
-                    <th>时间</th>
-                    <th>操作类型</th>
-                    <th>目标歌单</th>
-                    <th>成功 / 请求</th>
-                    <th>状态</th>
+                    <th class="col-check"><input type="checkbox" id="catalog-select-all" class="checkbox-custom" aria-label="全选当前页"></th>
+                    <th class="col-cover">封面</th>
+                    <th class="col-title sortable" data-sort="title">歌曲标题</th>
+                    <th class="col-artist sortable" data-sort="artist">歌手</th>
+                    <th class="col-album sortable" data-sort="album">专辑</th>
+                    <th class="col-duration sortable" data-sort="duration">时长</th>
+                    <th class="col-status">状态</th>
+                    <th class="col-actions">操作</th>
                   </tr>
                 </thead>
-                <tbody id="cloud-ops-log-body">
-                  <!-- Populated by cloud.js -->
+                <tbody id="catalog-table-body">
+                  <!-- Populated by catalog.js -->
                 </tbody>
               </table>
             </div>
+
+            <!-- Album gallery -->
+            <div id="catalog-cards-wrapper" class="hidden">
+              <div id="catalog-cards-grid" class="catalog-cards-grid">
+                <!-- Populated by catalog.js -->
+              </div>
+            </div>
+
+            <!-- Pagination Bar -->
+            <div class="catalog-pagination">
+              <span id="catalog-pagination-info">显示 0 - 0 首 / 共 0 首</span>
+              <div class="pagination-controls">
+                <button id="catalog-page-prev" class="page-btn" disabled>上一页</button>
+                <span id="catalog-page-current" class="numeral-mono" style="padding: 0 var(--space-2);">第 1 / 1 页</span>
+                <button id="catalog-page-next" class="page-btn" disabled>下一页</button>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- 3. DECK REVIEW (歌单清理) -->
+        <section id="view-deck" class="view-panel" role="tabpanel" aria-labelledby="tab-deck">
+          <div class="deck-view-wrapper">
+
+            <!-- Compact Combined Top Controls + Inline Progress -->
+            <div class="deck-toolbar">
+              <div class="deck-toolbar-left">
+                <label for="deck-playlist-select" class="sr-only">选择歌单</label>
+                <select id="deck-playlist-select" class="deck-select-sm" aria-label="选择歌单">
+                  <option value="">我喜欢的音乐</option>
+                </select>
+
+                <label for="deck-filter-select" class="sr-only">事实筛选</label>
+                <select id="deck-filter-select" class="deck-select-sm" aria-label="事实筛选">
+                  <option value="undecided">筛选: 未决定</option>
+                  <option value="relisten">筛选: 稍后再听</option>
+                  <option value="skipped">筛选: 已跳过</option>
+                  <option value="all">筛选: 全部歌曲</option>
+                  <option value="rules">筛选: 命中规则</option>
+                  <option value="vip">筛选: VIP歌曲</option>
+                  <option value="unavailable">筛选: 无音源</option>
+                  <option value="short">筛选: 短于90秒</option>
+                  <option value="long">筛选: 长于5分钟</option>
+                </select>
+
+                <label for="deck-order-select" class="sr-only">排序顺序</label>
+                <select id="deck-order-select" class="deck-select-sm" aria-label="排序顺序">
+                  <option value="random" selected>排序: 随机抽选</option>
+                  <option value="recent">排序: 歌单逆序</option>
+                  <option value="oldest">排序: 歌单原序</option>
+                  <option value="title">排序: 歌名 A-Z</option>
+                  <option value="duration">排序: 时长由长到短</option>
+                </select>
+              </div>
+
+              <div class="deck-toolbar-right">
+                <span class="deck-compact-progress numeral-mono">
+                  <strong id="deck-count-display">0 / 0</strong>
+                  <span class="deck-progress-sep">·</span>
+                  <span id="deck-remaining-display">剩余 0 首</span>
+                </span>
+                <button type="button" id="deck-random-next-btn" class="btn btn-secondary btn-sm" title="随机换一首待整理曲目">
+                  <span data-icon-slot="shuffle" data-icon-size="13"></span>
+                  <span>换一首</span>
+                </button>
+                <button id="deck-reset-progress-btn" class="btn btn-ghost btn-sm" title="重置当前歌单与筛选条件的整理进度">重置进度</button>
+              </div>
+
+              <div class="deck-progress-track deck-progress-track-inline">
+                <div id="deck-progress-bar-fill" class="deck-progress-fill"></div>
+              </div>
+            </div>
+
+            <!-- 42% / 58% Review Workspace Layout Container -->
+            <div id="deck-workspace-container">
+              <!-- Populated by deck.js -->
+            </div>
+
+            <!-- 3-Zone Tactile Decision Dock (All 7 required #deck-* control IDs + mode toggle) -->
+            <div class="deck-bottom-bar">
+              <div class="deck-dock-side">
+                <button id="deck-dislike-btn" class="btn btn-prune" data-deck-action="prune" title="取消喜欢 / 移出歌单 [← / A]">
+                  <span data-icon-slot="trash" data-icon-size="15"></span>
+                  <span class="btn-label">取消喜欢</span>
+                </button>
+              </div>
+
+              <div class="deck-dock-center">
+                <div class="deck-actions-group">
+                  <button id="deck-undo-btn" class="btn btn-secondary" data-deck-action="undo" title="撤销上一步操作 [Z]">
+                    <span data-icon-slot="undo" data-icon-size="15"></span>
+                    <span class="btn-label">撤销</span>
+                  </button>
+                  <button id="deck-relisten-btn" class="btn btn-secondary" data-deck-action="later" title="标记稍后再听 [L]">
+                    <span data-icon-slot="clock" data-icon-size="15"></span>
+                    <span class="btn-label">稍后再听</span>
+                  </button>
+                  <button id="deck-play-btn" class="btn btn-primary" data-deck-action="preview" title="播放 / 暂停 [P]" aria-label="播放或暂停">
+                    <span data-icon-slot="play" data-icon-size="16"></span>
+                  </button>
+                  <button id="deck-chorus-jump-btn" class="btn btn-secondary" data-deck-action="chorus" title="跳转副歌 [C / ↑]">
+                    <span data-icon-slot="zap" data-icon-size="15"></span>
+                    <span class="btn-label">副歌</span>
+                  </button>
+                  <button id="deck-skip-btn" class="btn btn-secondary" data-deck-action="skip" title="跳至本轮末尾 [Space]">
+                    <span data-icon-slot="skip-end" data-icon-size="15"></span>
+                    <span class="btn-label">跳至末尾</span>
+                  </button>
+                </div>
+
+                <div id="deck-mode-toggle" class="deck-mode-segmented mode-instant" role="group" aria-label="整理提交模式">
+                  <button type="button" class="deck-mode-opt active" data-deck-mode="instant" aria-pressed="true">立即同步 3s</button>
+                  <button type="button" class="deck-mode-opt" data-deck-mode="batch" aria-pressed="false">批量确认</button>
+                </div>
+              </div>
+
+              <div class="deck-dock-side">
+                <button id="deck-like-btn" class="btn btn-keep" data-deck-action="keep" title="保留歌曲 [→ / D]">
+                  <span data-icon-slot="check" data-icon-size="15"></span>
+                  <span class="btn-label">保留</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Keyboard Shortcuts Legend Bar -->
+            <div class="deck-shortcuts-legend">
+              <span><kbd class="kbd">←</kbd> / <kbd class="kbd">A</kbd> 移除</span>
+              <span><kbd class="kbd">→</kbd> / <kbd class="kbd">D</kbd> 保留</span>
+              <span><kbd class="kbd">L</kbd> 稍后再听</span>
+              <span><kbd class="kbd">Space</kbd> 跳至末尾</span>
+              <span><kbd class="kbd">P</kbd> 播放/暂停</span>
+              <span><kbd class="kbd">C</kbd> / <kbd class="kbd">↑</kbd> 副歌</span>
+              <span><kbd class="kbd">Z</kbd> 撤销</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. SETTINGS & SYNC (设置与同步) -->
+        <section id="view-cloud" class="view-panel" role="tabpanel" aria-labelledby="tab-cloud">
+          <div id="cloud-view-panel" class="cloud-container">
+
+            <!-- Recovery Panel (Always visible above tabs when unconfirmed operations freeze writes) -->
+            <div id="cloud-recovery-card" class="cloud-section-card cloud-recovery-card hidden">
+              <div class="cloud-section-header">
+                <div class="cloud-section-title">
+                  <span class="badge badge-danger">只读核对恢复</span>
+                  <span>存在未确定远端状态的云端操作，新写入已冻结</span>
+                </div>
+              </div>
+              <div id="cloud-recovery-list" class="batch-groups-list"></div>
+            </div>
+
+            <!-- Crisp 3-Tab Top Switcher (偏好设置 | 多渠道与会员 | 同步与备份) -->
+            <div class="cloud-subtab-bar">
+              <div class="cloud-subtab-tabs" role="tablist" aria-label="设置与同步子视图">
+                <button type="button" id="cloud-subtab-settings" class="cloud-subtab-btn active" data-cloud-subtab="settings" role="tab" aria-selected="true" aria-controls="cloud-panel-settings">
+                  <span data-icon-slot="settings" data-icon-size="14"></span>
+                  <span>偏好设置</span>
+                </button>
+                <button type="button" id="cloud-subtab-channels" class="cloud-subtab-btn" data-cloud-subtab="channels" role="tab" aria-selected="false" aria-controls="cloud-panel-channels">
+                  <span data-icon-slot="globe" data-icon-size="14"></span>
+                  <span>多渠道与会员</span>
+                </button>
+                <button type="button" id="cloud-subtab-sync" class="cloud-subtab-btn" data-cloud-subtab="sync" role="tab" aria-selected="false" aria-controls="cloud-panel-sync">
+                  <span data-icon-slot="cloud" data-icon-size="14"></span>
+                  <span>同步与备份</span>
+                  <span id="cloud-subtab-sync-badge" class="pending-count-badge hidden">0</span>
+                </button>
+              </div>
+              <button type="button" id="settings-shortcuts-btn" class="btn btn-ghost btn-sm cloud-shortcuts-btn">
+                <span data-icon-slot="key" data-icon-size="14"></span>
+                <span>快捷键一览</span>
+              </button>
+            </div>
+
+            <!-- SUB-PANEL A: 偏好设置 -->
+            <div id="cloud-panel-settings" class="cloud-subpanel active" role="tabpanel" aria-labelledby="cloud-subtab-settings">
+              <div id="settings-appearance-host"></div>
+              <section id="playback-settings" class="cloud-section-card playback-settings-card">
+                <div class="cloud-section-header">
+                  <div class="cloud-section-title">
+                    <span data-icon-slot="sliders" data-icon-size="15"></span>
+                    <span>播放与设备</span>
+                  </div>
+                  <span class="playback-section-sub">窗口行为、渲染性能与播放设备</span>
+                </div>
+                <div class="settings-grid">
+                  <div class="settings-block">
+                    <span class="settings-label">点击关闭按钮时</span>
+                    <div class="settings-segment">
+                      <button type="button" class="btn btn-secondary btn-sm" data-setting="minimize_to_tray" value="true">最小化到系统托盘</button>
+                      <button type="button" class="btn btn-secondary btn-sm" data-setting="minimize_to_tray" value="false">直接退出应用</button>
+                    </div>
+                  </div>
+
+                  <div class="settings-block">
+                    <span class="settings-label">GPU 性能</span>
+                    <div class="settings-segment">
+                      <button type="button" class="btn btn-secondary btn-sm" data-setting="gpu_performance_mode" value="eco">节能</button>
+                      <button type="button" class="btn btn-secondary btn-sm" data-setting="gpu_performance_mode" value="balanced">均衡</button>
+                      <button type="button" class="btn btn-secondary btn-sm" data-setting="gpu_performance_mode" value="high">高帧率</button>
+                    </div>
+                  </div>
+
+                  <div class="settings-block">
+                    <div class="settings-switch-row">
+                      <div class="settings-switch-meta">
+                        <span class="settings-switch-title">封面随指针倾斜</span>
+                        <span class="settings-switch-desc">启用审听封面视差倾角与动态景深。</span>
+                      </div>
+                      <label class="switch" aria-label="封面随指针倾斜">
+                        <input type="checkbox" id="settings-cover-tilt">
+                        <span class="switch-slider"></span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="settings-block">
+                    <label class="settings-label" for="settings-rate">播放速度</label>
+                    <select class="input-select" id="settings-rate">
+                      <option value="0.5">0.5×</option>
+                      <option value="0.75">0.75×</option>
+                      <option value="1">1×</option>
+                      <option value="1.25">1.25×</option>
+                      <option value="1.5">1.5×</option>
+                      <option value="2">2×</option>
+                    </select>
+                  </div>
+
+                  <div class="settings-block">
+                    <label class="settings-label" for="settings-sleep">睡眠定时</label>
+                    <select class="input-select" id="settings-sleep">
+                      <option value="off">关闭</option>
+                      <option value="15">15 分钟</option>
+                      <option value="30">30 分钟</option>
+                      <option value="45">45 分钟</option>
+                      <option value="60">60 分钟</option>
+                      <option value="track">播完当前曲目</option>
+                    </select>
+                  </div>
+
+                  <div class="settings-block">
+                    <label class="settings-label" for="settings-output">音频输出</label>
+                    <div class="settings-row-between">
+                      <select class="input-select" id="settings-output" style="flex: 1;">
+                        <option value="default">系统默认设备</option>
+                      </select>
+                      <button type="button" class="btn btn-secondary btn-sm" id="settings-eq-btn">均衡器</button>
+                    </div>
+                    <small id="settings-output-hint" class="settings-hint"></small>
+                  </div>
+                </div>
+              </section>
+
+              <section id="desktop-lyrics-settings" class="cloud-section-card playback-settings-card">
+                <div class="cloud-section-header">
+                  <div class="cloud-section-title">
+                    <span data-icon-slot="lyrics" data-icon-size="15"></span>
+                    <span>桌面歌词样式</span>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <span class="playback-section-sub">无框浮层与实时本地预览（支持边缘拉伸与 Ctrl+滚轮缩放）</span>
+                    <button type="button" id="settings-lyrics-center-btn" class="btn btn-secondary btn-sm">桌面歌词水平居中</button>
+                  </div>
+                </div>
+
+                <div class="settings-grid">
+                  <div class="settings-block settings-block-wide">
+                    <div id="settings-lyrics-preview-stage" class="lyrics-preview-stage" data-backdrop="dark">
+                      <div class="lyrics-preview-header">
+                        <span class="lyrics-preview-title">即时本地样式预览</span>
+                        <div class="lyrics-preview-pills" role="group" aria-label="切换预览背景">
+                          <button type="button" class="lyrics-preview-backdrop-btn active" data-preview-backdrop="dark" aria-pressed="true">深色桌面</button>
+                          <button type="button" class="lyrics-preview-backdrop-btn" data-preview-backdrop="light" aria-pressed="false">浅色桌面</button>
+                          <button type="button" class="lyrics-preview-backdrop-btn" data-preview-backdrop="wallpaper" aria-pressed="false">渐变壁纸</button>
+                        </div>
+                      </div>
+                      <div class="lyrics-preview-canvas">
+                        <div id="settings-lyrics-preview-box" class="lyrics-preview-box align-center">
+                          <div id="settings-lyrics-preview-line" class="lyrics-preview-line">星光落进安静的旋律里</div>
+                          <div id="settings-lyrics-preview-next" class="lyrics-preview-line-secondary">下一句：风吹过夏夜与旧唱片</div>
+                          <div id="settings-lyrics-preview-trans" class="lyrics-preview-trans">Starlight falls gently into the quiet melody</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="settings-block">
+                    <label class="settings-label" for="settings-surface_style">悬浮窗形态</label>
+                    <select class="input-select" id="settings-surface_style">
+                      <option value="borderless">纯净无框（推荐）</option>
+                      <option value="pill">灵动胶囊</option>
+                      <option value="acrylic">亚克力磨砂</option>
+                    </select>
+                  </div>
+
+                  <div class="settings-block">
+                    <label class="settings-label" for="settings-preset">配色预设</label>
+                    <select class="input-select" id="settings-preset">
+                      <option value="cinema_white">纯净电影白</option>
+                      <option value="emerald_flow">翡翠流光</option>
+                      <option value="vinyl_gold">黑胶暖金</option>
+                      <option value="light_desktop_ink">浅色桌面墨字</option>
+                      <option value="sakura_mist">樱雾柔粉</option>
+                      <option value="game_contrast">游戏高对比</option>
+                      <option value="apple_glass">苹果毛玻璃</option>
+                      <option value="neon_duo">霓虹双行</option>
+                    </select>
+                  </div>
+
+                  <div class="settings-block">
+                    <div class="settings-range-header">
+                      <label class="settings-label" for="settings-font_size">字号</label>
+                      <span id="settings-font_size-val" class="settings-range-value">28 px</span>
+                    </div>
+                    <input id="settings-font_size" type="range" min="18" max="48" step="1">
+                  </div>
+
+                  <div class="settings-block">
+                    <label class="settings-label" for="settings-font_weight">字重</label>
+                    <select class="input-select" id="settings-font_weight">
+                      <option value="400">400 常规</option>
+                      <option value="500">500 中等</option>
+                      <option value="600">600 半粗</option>
+                      <option value="700">700 粗体</option>
+                      <option value="800">800 特粗</option>
+                    </select>
+                  </div>
+
+                  <div class="settings-block">
+                    <div class="settings-range-header">
+                      <label class="settings-label" for="settings-shadow_strength">阴影强度</label>
+                      <span id="settings-shadow_strength-val" class="settings-range-value">1.0×</span>
+                    </div>
+                    <input id="settings-shadow_strength" type="range" min="0" max="1.5" step="0.1">
+                  </div>
+
+                  <div class="settings-block">
+                    <div class="settings-range-header">
+                      <label class="settings-label" for="settings-bg_opacity">背景透明度</label>
+                      <span id="settings-bg_opacity-val" class="settings-range-value">0%</span>
+                    </div>
+                    <input id="settings-bg_opacity" type="range" min="0" max="0.8" step="0.05">
+                  </div>
+
+                  <div class="settings-block">
+                    <label class="settings-label" for="settings-align">对齐</label>
+                    <select class="input-select" id="settings-align">
+                      <option value="left">居左</option>
+                      <option value="center">居中</option>
+                      <option value="right">居右</option>
+                    </select>
+                  </div>
+
+                  <div class="settings-block">
+                    <label class="settings-label" for="settings-mode">行数</label>
+                    <select class="input-select" id="settings-mode">
+                      <option value="single">单行</option>
+                      <option value="double">双行</option>
+                    </select>
+                  </div>
+
+                  <div class="settings-block settings-block-wide">
+                    <div class="settings-toggle-grid">
+                      <div class="settings-switch-row">
+                        <div class="settings-switch-meta">
+                          <span class="settings-switch-title">文字描边</span>
+                          <span class="settings-switch-desc">为明亮壁纸与游戏画面增强边缘轮廓对比度。</span>
+                        </div>
+                        <label class="switch" aria-label="文字描边">
+                          <input id="settings-stroke" type="checkbox">
+                          <span class="switch-slider"></span>
+                        </label>
+                      </div>
+
+                      <div class="settings-switch-row">
+                        <div class="settings-switch-meta">
+                          <span class="settings-switch-title">显示译文</span>
+                          <span class="settings-switch-desc">歌词包含翻译时自动展示双语辅助行。</span>
+                        </div>
+                        <label class="switch" aria-label="显示译文">
+                          <input id="settings-show_translation" type="checkbox">
+                          <span class="switch-slider"></span>
+                        </label>
+                      </div>
+
+                      <div class="settings-switch-row">
+                        <div class="settings-switch-meta">
+                          <span class="settings-switch-title">允许滚轮直接调节音量</span>
+                          <span class="settings-switch-desc">默认关闭以防误触；随时可用 Ctrl+滚轮 缩放歌词字号。</span>
+                        </div>
+                        <label class="switch" aria-label="允许滚轮直接调节音量">
+                          <input id="settings-wheel_volume" type="checkbox">
+                          <span class="switch-slider"></span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section id="about-settings" class="cloud-section-card playback-settings-card">
+                <div class="cloud-section-header">
+                  <div class="cloud-section-title">
+                    <span data-icon-slot="info" data-icon-size="15"></span>
+                    <span>关于 Pruner Studio</span>
+                  </div>
+                  <span id="settings-version" class="badge badge-muted"></span>
+                </div>
+                <div class="settings-row-between">
+                  <p class="about-settings-copy">曲库索引、播放历史和设置保存在本机应用数据目录。</p>
+                  <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    <small id="settings-update-result" class="settings-hint" role="status"></small>
+                    <button type="button" id="settings-check-update" class="btn btn-secondary btn-sm">检查更新</button>
+                  </div>
+                </div>
+              </section>
+              <div class="cloud-section-card">
+                <div class="cloud-section-header">
+                  <div class="cloud-section-title">
+                    <span data-icon-slot="settings" data-icon-size="15"></span>
+                    <span>音质与播放效果</span>
+                  </div>
+                </div>
+
+                <div class="settings-grid">
+                  <!-- Audio Quality Selector -->
+                  <div class="settings-block">
+                    <label class="settings-label" for="settings-quality-select">VIP 最高音质偏好</label>
+                    <select id="settings-quality-select" class="input-select">
+                      <option value="jymaster">超清母带 (jymaster)</option>
+                      <option value="hires">Hi-Res 高解析度无损 (hires)</option>
+                      <option value="lossless">无损 FLAC (lossless)</option>
+                      <option value="exhigh">极高音质 320k (exhigh)</option>
+                      <option value="standard">标准音质 (standard)</option>
+                      <option value="sky">沉浸声 · 实验性 (sky)</option>
+                    </select>
+                    <p class="settings-hint">按所选音质请求网易云原曲；仅展示服务端实测返回的格式与采样率。</p>
+                  </div>
+
+                  <!-- Web Audio Loudness & Crossfade -->
+                  <div class="settings-block">
+                    <div class="settings-row-between">
+                      <div>
+                        <span class="settings-label">响度均衡</span>
+                        <p class="settings-hint">减少歌曲之间的音量差异，适用于本机转播的音频。</p>
+                      </div>
+                      <label class="switch" aria-label="启用响度均衡">
+                        <small class="audio-bypass" hidden>直连音源 · 音效旁路</small><input type="checkbox" id="settings-loudness-toggle" checked>
+                        <span class="switch-slider"></span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="settings-block">
+                    <label class="settings-label" for="settings-crossfade-select">同源歌曲交叉淡化时长</label>
+                    <small class="audio-bypass" hidden>直连音源 · 音效旁路</small><select id="settings-crossfade-select" class="input-select">
+                      <option value="0">关闭 (0 ms)</option>
+                      <option value="150" selected>150 ms</option>
+                      <option value="300">300 ms</option>
+                      <option value="500">500 ms</option>
+                    </select>
+                    <p class="settings-hint">两首歌曲都使用本机流地址时，切歌会短暂重叠播放。</p>
+                  </div>
+
+                  <!-- Immersive Stage Visual & Lyrics Options -->
+                  <div class="settings-block settings-block-wide">
+                    <div class="settings-toggle-grid">
+                      <div class="settings-row-between">
+                        <div>
+                          <span class="settings-label">沉浸歌词景深虚化</span>
+                          <p class="settings-hint">在全屏舞台对远离当前句的歌词施加柔和景深模糊，悬停即恢复清晰。</p>
+                        </div>
+                        <label class="switch" aria-label="开启沉浸歌词景深虚化">
+                          <input type="checkbox" id="settings-lyrics-blur-toggle">
+                          <span class="switch-slider"></span>
+                        </label>
+                      </div>
+
+                      <div class="settings-row-between">
+                        <div>
+                          <span class="settings-label">低频律动封面光晕</span>
+                          <p class="settings-hint">播放本机同源音频流时，封面呼吸光晕随低频能量轻微律动。</p>
+                        </div>
+                        <label class="switch" aria-label="开启低频律动封面光晕">
+                          <input type="checkbox" id="settings-bass-glow-toggle" checked>
+                          <span class="switch-slider"></span>
+                        </label>
+                      </div>
+
+                      <div class="settings-row-between">
+                        <div>
+                          <span class="settings-label">AMLL 社区逐字歌词补全</span>
+                          <p class="settings-hint">歌曲缺少逐字时间时，从 AMLL 社区查找歌词。</p>
+                        </div>
+                        <label class="switch" aria-label="开启 AMLL 逐字歌词补全">
+                          <input type="checkbox" id="settings-amll-ttml-toggle" checked>
+                          <span class="switch-slider"></span>
+                        </label>
+                      </div>
+
+                      <div class="settings-row-between">
+                        <div>
+                          <span class="settings-label">Windows 全局媒体快捷键</span>
+                          <p class="settings-hint">后台响应 Ctrl+Alt+→/← 切歌、↑/↓ 音量、M 静音、P 播放/暂停、L 红心、D 桌面歌词、K 穿透锁、G 游戏护航。</p>
+                        </div>
+                        <label class="switch" aria-label="开启全局媒体快捷键">
+                          <small id="settings-hotkey-status"></small><input type="checkbox" id="settings-hotkeys-toggle" checked>
+                          <span class="switch-slider"></span>
+                        </label>
+                      </div>
+
+                      <div class="settings-row-between">
+                        <div>
+                          <span class="settings-label">游戏护航模式</span>
+                          <p class="settings-hint">打游戏边听歌时冻结流光背景、模糊与过渡动画，降低 GPU/内存占用并配合穿透字幕与全局热键。</p>
+                        </div>
+                        <label class="switch" aria-label="开启游戏护航模式">
+                          <input type="checkbox" id="settings-game-mode-toggle">
+                          <span class="switch-slider"></span>
+                        </label>
+                      </div>
+
+                      <div class="settings-row-between">
+                        <div>
+                          <span class="settings-label">私人漫游“不想听”同步至云端垃圾桶</span>
+                          <p class="settings-hint">在私人漫游点击“不想听”时，同时通知网易云 FM 垃圾桶（受风控冷却限制）。</p>
+                        </div>
+                        <label class="switch" aria-label="同步私人漫游不想听至网易云 FM 垃圾桶">
+                          <input id="settings-fm-sync" type="checkbox">
+                          <span class="switch-slider"></span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Desktop Floating Lyrics Control -->
+                  <div class="settings-block settings-block-wide settings-row-between">
+                    <div>
+                      <span class="settings-label">桌面悬浮歌词窗口</span>
+                      <p class="settings-hint">无边框置顶迷你歌词条，支持鼠标拖动与穿透锁（锁定后可通过 Ctrl+Alt+K 或系统托盘解锁）。</p>
+                    </div>
+                    <div class="settings-action-row">
+                      <button type="button" id="settings-desktop-lyrics-toggle-btn" class="btn btn-primary btn-sm">开启桌面歌词</button>
+                      <button type="button" id="settings-desktop-lyrics-lock-btn" class="btn btn-secondary btn-sm">锁定鼠标穿透</button>
+                      <a href="/desktop_lyrics.html?preview=1" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">独立窗口预览</a>
+                    </div>
+                  </div>
+
+                  <!-- Bounded LRU Audio Disk Cache -->
+                  <div class="settings-block settings-block-wide">
+                    <div class="settings-row-between">
+                      <div>
+                        <span class="settings-label">本机音频磁盘缓存 (LRU 上限)</span>
+                        <p id="settings-cache-stats-text" class="settings-hint numeral-mono">缓存统计加载中...</p>
+                      </div>
+                      <div class="settings-action-row">
+                        <select id="settings-cache-limit-select" class="input-select" aria-label="音频缓存上限">
+                          <option value="0">关闭缓存 (0 MB)</option>
+                          <option value="256">256 MB</option>
+                          <option value="512" selected>512 MB (默认)</option>
+                          <option value="1024">1024 MB (1 GB)</option>
+                          <option value="2048">2048 MB (2 GB)</option>
+                          <option value="4096">4096 MB (4 GB)</option>
+                        </select>
+                        <button type="button" id="settings-clear-cache-btn" class="btn btn-secondary btn-sm">清空音频缓存</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Local Lossless Music Folders -->
+                  <div class="settings-block settings-block-wide">
+                    <div class="settings-row-between">
+                      <div>
+                        <span class="settings-label">本地无损音乐目录</span>
+                        <p class="settings-hint">配置本机 FLAC / MP3 / WAV 文件夹，作为离线收听与高音质回退源。</p>
+                      </div>
+                      <button id="settings-scan-local-btn" class="btn btn-primary btn-sm">
+                        <span data-icon-slot="folder" data-icon-size="14"></span>
+                        <span>扫描本地曲库</span>
+                      </button>
+                    </div>
+
+                    <div class="settings-inline-form">
+                      <button id="settings-pick-local-dir-btn" class="btn btn-secondary">选择文件夹</button>
+                      <input type="text" id="settings-local-dir-input" class="input-text" placeholder="输入本地音乐目录路径，例如 D:\Music\FLAC" aria-label="本地音乐目录路径">
+                      <button id="settings-add-local-dir-btn" class="btn btn-secondary btn-sm">添加目录</button>
+                    </div>
+
+                    <div id="settings-local-dirs-list" class="local-dirs-list"></div>
+                    <div id="settings-local-scan-status" class="settings-hint"></div>
+                  </div>
+
+                  <!-- Recommendation Feedback Maintenance -->
+                  <div class="settings-block settings-block-wide settings-row-between">
+                    <div>
+                      <span class="settings-label">本地推荐反馈数据</span>
+                      <p class="settings-hint">仅记录“不再推荐”与显式点赞，绝不包含歌单清理删歌记录。</p>
+                    </div>
+                    <button id="settings-clear-feedback-btn" class="btn btn-secondary btn-sm">清除本地推荐反馈</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- SUB-PANEL B: 多渠道与会员 -->
+            <div id="cloud-panel-channels" class="cloud-subpanel" role="tabpanel" aria-labelledby="cloud-subtab-channels">
+              <div class="cloud-section-card">
+                <div class="cloud-section-header">
+                  <div class="cloud-section-title">
+                    <span data-icon-slot="globe" data-icon-size="15"></span>
+                    <span>多渠道音源</span>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <button type="button" id="cloud-channels-test-all-btn" class="btn btn-secondary btn-sm">一键探测全部</button>
+                    <label class="switch" aria-label="启用多渠道外部音源">
+                      <input type="checkbox" id="settings-external-toggle" checked>
+                      <span class="switch-slider"></span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="settings-block">
+                  <span class="settings-label">跨渠道音质择优策略</span>
+                  <div class="segmented-control" role="group" aria-label="跨渠道音质择优策略">
+                    <button type="button" class="segmented-btn active" data-arbitration-btn="best_quality_race" aria-pressed="true">全渠道最高音质择优</button>
+                    <button type="button" class="segmented-btn" data-arbitration-btn="netease_first" aria-pressed="false">网易云原曲优先</button>
+                  </div>
+                  <p class="settings-hint">
+                    「全渠道最高音质择优」在网易云原曲已是无损/母带时零延迟直出；仅返回有损或试听片段时并发比价酷狗概念版、咪咕、QQ音乐、云盘与本地曲库，优先播放完整最高音质版本。
+                  </p>
+                </div>
+
+                <div id="cloud-channels-grid" class="channels-grid">
+                  <!-- Populated by cloud.js (网易云 + 酷狗概念版/咪咕/QQ音乐/酷我/B站/GDStudio/OpenSubsonic/WebDAV/自定义) -->
+                </div>
+
+                <div class="settings-block">
+                  <span class="settings-label">HTTP Resolver v2 订阅与隔离 Sidecar 桥接</span>
+                  <div class="settings-action-row">
+                    <input type="url" id="resolver-sub-url" class="input-text" placeholder="输入 Resolver v2 订阅 JSON 地址（HTTPS 或本机回环）" aria-label="Resolver v2 订阅地址">
+                    <button type="button" id="resolver-subscribe-btn" class="btn btn-secondary btn-sm">导入订阅</button>
+                  </div>
+                  <div id="resolver-v2-list" class="resolver-v2-list"></div>
+                  <div class="settings-action-row">
+                    <input type="text" id="sidecar-adapter-path" class="input-text" placeholder="可选：本地 Sidecar Python 适配器路径" aria-label="Sidecar 适配器路径">
+                    <button type="button" id="sidecar-toggle-btn" class="btn btn-secondary btn-sm">启动 Sidecar</button>
+                  </div>
+                  <p id="sidecar-status-text" class="settings-hint">未启动（可选独立低权回环 Sidecar 桥接）</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- SUB-PANEL C: 同步与备份 -->
+            <div id="cloud-panel-sync" class="cloud-subpanel" role="tabpanel" aria-labelledby="cloud-subtab-sync">
+              <section class="cloud-section-card lan-sync-card" aria-labelledby="lan-sync-heading">
+                <div class="cloud-section-header">
+                  <h2 class="cloud-section-title" id="lan-sync-heading">多端互联 · 局域网同步</h2>
+                  <span id="lan-sync-status" class="badge" role="status">读取中</span>
+                </div>
+                <label><input id="lan-sync-enabled-toggle" type="checkbox" role="switch"> 允许同一局域网中的已配对设备同步</label>
+                <p id="lan-sync-addresses"></p>
+                <p>TLS 证书指纹（SHA-256）<br><span id="lan-sync-cert-fp" class="numeral-mono"></span></p>
+                <div class="lan-sync-controls">
+                  <label>桌面名称 <input id="lan-sync-name" maxlength="100"></label>
+                  <label>端口 <input id="lan-sync-port" type="number" min="1024" max="65535"></label>
+                  <button class="btn btn-secondary" id="lan-sync-save">保存</button>
+                </div>
+                <div>
+                  <button class="btn btn-secondary" id="lan-sync-pair-btn" disabled>生成配对码</button>
+                  <div class="lan-sync-pair" id="lan-sync-pair-panel" hidden>
+                    <div id="lan-sync-qr"></div>
+                    <div><strong class="numeral-mono" id="lan-sync-pin"></strong>
+                      <p id="lan-sync-countdown"></p>
+                      <input id="lan-sync-uri" aria-label="配对链接" readonly>
+                      <button class="btn btn-secondary" id="lan-sync-copy">复制链接</button>
+                      <button class="btn btn-secondary" id="lan-sync-cancel">取消配对</button>
+                    </div>
+                  </div>
+                </div>
+                <div><h3>已配对设备</h3><ul id="lan-sync-devices-list"></ul></div>
+                <div class="lan-sync-controls">
+                  <button class="btn btn-secondary" id="lan-sync-push-handoff-btn" disabled>推送当前播放到手机</button>
+                  <span id="lan-sync-incoming" aria-live="polite"></span>
+                  <button class="btn btn-secondary" id="lan-sync-apply" hidden>接续手机播放</button>
+                  <button class="btn btn-secondary" id="lan-sync-dismiss" hidden>忽略此次接续</button>
+                </div>
+                <span id="lan-sync-message" role="status"></span>
+              </section>
+              <!-- WebDAV Decentralized Encrypted Sync Card -->
+              <section class="cloud-section-card" aria-labelledby="webdav-sync-heading">
+                <div class="cloud-section-header">
+                  <h2 class="cloud-section-title" id="webdav-sync-heading">WebDAV 去中心化加密同步（AES-256-GCM）</h2>
+                </div>
+                <div class="settings-block">
+                  <div class="settings-action-row">
+                    <input type="password" id="webdav-sync-passphrase" class="input-text" autocomplete="off" placeholder="输入端到端加密口令（至少 6 位，仅在本地派生密钥）" aria-label="WebDAV 加密同步口令">
+                    <button type="button" id="webdav-sync-push-btn" class="btn btn-secondary btn-sm">加密推送</button>
+                    <button type="button" id="webdav-sync-pull-btn" class="btn btn-secondary btn-sm">解密拉取</button>
+                  </div>
+                  <p id="webdav-sync-status" class="settings-hint">先在「多渠道与会员」中配置 WebDAV 地址与账号，同步数据在上传前完成本地 AES-256-GCM 加密。</p>
+                </div>
+              </section>
+
+              <!-- Cross-Platform Playlist Migration Assistant -->
+              <section class="cloud-section-card" aria-labelledby="migration-assistant-heading">
+                <div class="cloud-section-header">
+                  <h2 class="cloud-section-title" id="migration-assistant-heading">跨平台歌单迁移与导入助手</h2>
+                </div>
+                <div class="settings-block">
+                  <textarea id="migration-source-text" class="input-text migration-textarea" rows="4" placeholder="粘贴 JSON、M3U/M3U8 或逐行“歌名 - 歌手”文本..." aria-label="迁移歌单源文本"></textarea>
+                  <div class="settings-action-row">
+                    <select id="migration-format-select" class="input-text" aria-label="源格式">
+                      <option value="auto">自动识别格式</option>
+                      <option value="json">JSON 歌单</option>
+                      <option value="m3u">M3U / M3U8</option>
+                      <option value="txt">纯文本（歌名 - 歌手）</option>
+                    </select>
+                    <label class="settings-checkbox-inline"><input type="checkbox" id="migration-online-checkbox"> 未命中时联机多渠道补全</label>
+                    <button type="button" id="migration-preview-btn" class="btn btn-secondary btn-sm">匹配预览</button>
+                  </div>
+                  <p id="migration-summary-text" class="settings-hint">支持按 ISRC / MBID / 本地曲库 / 网易云目录自动评分匹配，未命中曲目可人工复核。</p>
+                  <div id="migration-preview-list" class="migration-preview-list"></div>
+                  <div class="settings-action-row">
+                    <input type="text" id="migration-target-name" class="input-text" placeholder="目标混合歌单名称" aria-label="目标混合歌单名称">
+                    <button type="button" id="migration-commit-btn" class="btn btn-primary btn-sm" disabled>写入混合歌单</button>
+                  </div>
+                </div>
+              </section>
+
+              <!-- Synced Playlists Card -->
+              <div class="cloud-section-card">
+                <div class="cloud-section-header">
+                  <div class="cloud-section-title">已同步歌单</div>
+                </div>
+                <div id="cloud-sync-progress-banner" class="cloud-sync-progress-banner hidden"></div>
+                <div id="cloud-playlists-grid" class="playlist-grid">
+                  <!-- Populated by cloud.js -->
+                </div>
+              </div>
+
+              <!-- Grouped Pending Batch Actions -->
+              <div class="cloud-section-card">
+                <div class="cloud-section-header">
+                  <div class="cloud-section-title">
+                    <span>待执行变更</span>
+                    <span id="cloud-batch-total-count" class="badge badge-danger">0 首待处理</span>
+                  </div>
+                  <button id="cloud-open-batch-confirm-btn" class="btn btn-danger btn-sm" disabled>确认执行云端变更</button>
+                </div>
+                <div id="cloud-batch-groups-container" class="batch-groups-list">
+                  <!-- Populated by cloud.js -->
+                </div>
+              </div>
+
+              <!-- Collapsible "More Tools" Accordion -->
+              <div class="cloud-section-card" style="padding: 0; background: transparent; border: none;">
+                <button id="cloud-more-tools-toggle" class="cloud-accordion-toggle">
+                  <span>更多工具 (本地备份 · 曲库导入 · 操作记录)</span>
+                  <span class="accordion-chevron" data-icon-slot="chevron-right" data-icon-size="15"></span>
+                </button>
+                <div id="cloud-more-tools-panel" class="cloud-accordion-panel">
+                  <div class="tools-grid">
+                    <div class="tool-card">
+                      <div class="tool-card-header">
+                        <div class="tool-card-title">本地备份</div>
+                        <button id="cloud-backup-btn" class="btn btn-secondary btn-sm">
+                          <span data-icon-slot="download" data-icon-size="13"></span>
+                          <span>导出 JSON 快照</span>
+                        </button>
+                      </div>
+                      <p class="tool-card-desc">
+                        导出完整的本地曲库与歌单快照，防止误操作。
+                      </p>
+                    </div>
+
+                    <div class="tool-card">
+                      <div class="tool-card-header">
+                        <div class="tool-card-title">导入曲库</div>
+                        <button id="cloud-open-import-btn" class="btn btn-secondary btn-sm">
+                          <span data-icon-slot="upload" data-icon-size="13"></span>
+                          <span>导入 JSON / CSV</span>
+                        </button>
+                      </div>
+                      <p class="tool-card-desc">
+                        恢复或合并之前导出的歌单或 CSV 归档至本地缓存。
+                      </p>
+                    </div>
+                  </div>
+
+                  <!-- Operations History Table -->
+                  <div class="cloud-section-card">
+                    <div class="cloud-section-header">
+                      <div class="cloud-section-title">操作记录 (最近100条)</div>
+                    </div>
+                    <table class="ops-log-table">
+                      <thead>
+                        <tr>
+                          <th>时间</th>
+                          <th>操作类型</th>
+                          <th>目标歌单</th>
+                          <th>成功 / 请求</th>
+                          <th>状态</th>
+                        </tr>
+                      </thead>
+                      <tbody id="cloud-ops-log-body">
+                        <!-- Populated by cloud.js -->
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- 5. FULL-PAGE MULTI-CHANNEL SEARCH VIEW (Populated by search_view.js) -->
+        <section id="view-history" class="view-panel" role="tabpanel" aria-labelledby="tab-history">
+          <div class="history-page"><h1>播放历史</h1><div class="history-tools">
+            <input id="history-filter" class="input-text" type="search" aria-label="搜索播放历史" placeholder="搜索曲名、歌手或专辑">
+            <button id="history-clear" class="btn btn-secondary">清空历史</button>
+          </div><div id="history-list"></div>
+          <button id="history-more" class="btn btn-secondary" hidden>加载更多</button></div>
+        </section>
+        <section id="view-search" class="view-panel" role="tabpanel" aria-label="搜索结果"></section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- UNIFIED GLOBAL PERSISTENT BOTTOM AUDIO PLAYER (Visible Across ALL Tabs!) -->
+  <footer id="catalog-player-bar" class="audio-player-bar" role="region" aria-label="全局播放器">
+    <div class="player-track-info">
+      <button id="player-cover-stage-trigger" class="player-cover-btn" title="展开全屏沉浸歌词舞台" aria-label="展开全屏沉浸歌词舞台">
+        <img id="player-track-cover" class="player-cover" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'><rect width='160' height='160' fill='%23ede6da'/><circle cx='80' cy='80' r='56' fill='%23262320'/><circle cx='80' cy='80' r='42' fill='none' stroke='%23f5efe6' stroke-opacity='0.1' stroke-width='1'/><circle cx='80' cy='80' r='19' fill='%236d8d72'/><circle cx='80' cy='80' r='4.2' fill='%23efe9de'/></svg>" alt="封面">
+        <span class="player-cover-hover-icon" data-icon-slot="maximize" data-icon-size="14"></span>
+      </button>
+      <div class="player-meta">
+        <div class="player-title-row">
+          <div id="player-track-title" class="player-title">未选择曲目</div>
+          <button id="player-heart-btn" class="player-inline-icon-btn" title="红心喜欢" aria-label="红心喜欢" aria-pressed="false">
+            <span data-icon-slot="heart" data-icon-size="14"></span>
+          </button>
+        </div>
+        <div class="player-artist-row">
+          <div id="player-track-artist" class="player-artist">就绪</div>
+          <button type="button" id="player-source-badge" class="sr-only" title="点击切换音源版本"></button>
+        </div>
+        <div id="player-inline-lyric" class="player-inline-lyric hidden" aria-live="off"></div>
+      </div>
+    </div>
+
+    <div class="player-center-controls">
+      <div class="player-buttons-row">
+        <button id="player-mode-btn" class="player-btn" title="切换播放模式" aria-label="切换播放模式">
+          <span data-icon-slot="repeat" data-icon-size="15"></span>
+        </button>
+        <button id="player-prev-track-btn" class="player-btn" title="上一首 (Ctrl+←)" aria-label="上一首">
+          <span data-icon-slot="skip-prev" data-icon-size="15"></span>
+        </button>
+        <button id="player-play-btn" class="player-btn player-btn-main" title="播放 / 暂停 (Space)" aria-label="播放或暂停">
+          <span data-icon-slot="play" data-icon-size="16"></span>
+        </button>
+        <button id="player-next-track-btn" class="player-btn" title="下一首 (Ctrl+→)" aria-label="下一首">
+          <span data-icon-slot="skip-next" data-icon-size="15"></span>
+        </button>
+      </div>
+
+      <div class="player-timeline-row">
+        <span id="player-time-current" class="player-time time-current">0:00</span>
+        <div class="timeline-slider-container">
+          <div class="timeline-track">
+            <div id="player-chorus-marker" class="timeline-chorus-marker hidden" title="副歌区段"></div>
+            <div id="player-timeline-progress" class="timeline-progress"></div>
+          </div>
+          <div class="timeline-thumb" aria-hidden="true"></div>
+          <div id="player-timeline-tooltip" class="timeline-tooltip hidden" aria-hidden="true">0:00</div>
+          <input type="range" id="player-timeline-slider" class="timeline-slider" min="0" max="100" value="0" step="0.1" aria-label="跳转进度">
+        </div>
+        <span id="player-time-total" class="player-time time-total">0:00</span>
+      </div>
+    </div>
+
+    <div class="player-right-controls">
+      <button id="player-desktop-lyrics-btn" class="player-btn player-lyric-glyph-btn" title="桌面悬浮歌词 (Ctrl+Alt+D)" aria-label="桌面悬浮歌词" aria-pressed="false">词</button>
+      <div id="player-active-status-badges" aria-label="当前播放设置">
+        <button id="player-rate-badge" type="button" title="调整播放速度" hidden></button>
+        <button id="player-sleep-badge" type="button" title="调整睡眠定时" hidden></button>
+        <button id="player-eq-badge" type="button" title="调整均衡器" hidden>EQ</button>
+      </div>
+      <div class="volume-control-group">
+        <button id="player-mute-btn" class="player-btn" title="静音 / 取消静音" aria-label="静音">
+          <span data-icon-slot="volume" data-icon-size="15"></span>
+        </button>
+        <input type="range" id="player-volume-slider" class="volume-slider" min="0" max="100" value="80" aria-label="调节音量">
+        <span id="player-volume-pct" class="volume-pct numeral-mono">80%</span>
+      </div>
+      <button id="player-queue-btn" class="player-btn player-queue-btn" title="播放队列" aria-label="播放队列">
+        <span data-icon-slot="queue" data-icon-size="15"></span>
+        <span id="player-queue-count" class="queue-count-dot hidden">0</span>
+      </button>
+      <div class="player-more-wrapper">
+        <button id="player-more-btn" class="player-btn" title="更多播放控制" aria-label="更多播放控制" aria-expanded="false" aria-haspopup="dialog" aria-controls="player-more-popover">
+          <span data-icon-slot="more-horizontal" data-icon-size="16"></span>
+        </button>
+        <div id="player-more-popover" class="player-more-popover hidden" role="dialog" aria-label="更多播放控制">
+          <fieldset class="player-adjustments">
+            <legend>播放调节</legend>
+            <button class="player-btn" id="player-eq-btn" title="均衡器" aria-label="均衡器">EQ</button>
+            <label class="player-compact" title="播放速度">
+              <span>速度</span>
+              <select class="input-text" id="player-rate">
+                <option value="0.5">0.5×</option>
+                <option value="0.75">0.75×</option>
+                <option value="1">1×</option>
+                <option value="1.25">1.25×</option>
+                <option value="1.5">1.5×</option>
+                <option value="2">2×</option>
+              </select>
+            </label>
+            <label class="player-compact" title="睡眠定时">
+              <span>定时</span>
+              <select class="input-text" id="player-sleep">
+                <option value="off">关闭</option>
+                <option value="15">15 分钟</option>
+                <option value="30">30 分钟</option>
+                <option value="45">45 分钟</option>
+                <option value="60">60 分钟</option>
+                <option value="track">播完当前曲目</option>
+              </select>
+            </label>
+            <small id="player-sleep-countdown" hidden></small>
+          </fieldset>
+          <div class="player-more-seek-row">
+            <button type="button" id="player-prev-btn" class="player-more-item player-more-seek-btn" title="快退 5 秒">
+              <span data-icon-slot="rewind-5" data-icon-size="14"></span>
+              <span>-5s</span>
+            </button>
+            <button type="button" id="player-next-btn" class="player-more-item player-more-seek-btn" title="快进 5 秒">
+              <span data-icon-slot="forward-5" data-icon-size="14"></span>
+              <span>+5s</span>
+            </button>
+          </div>
+          <button type="button" id="player-chorus-btn" class="player-more-item player-btn-chorus" title="跳转副歌">
+            <span data-icon-slot="zap" data-icon-size="14"></span>
+            <span class="btn-label">跳至 35%</span>
+          </button>
+          <button type="button" id="player-similar-btn" class="player-more-item" title="发现相似歌曲">
+            <span data-icon-slot="sparkles" data-icon-size="14"></span>
+            <span>相似歌曲</span>
+          </button>
+          <button type="button" id="player-candidates-btn" class="player-more-item" title="切换音源版本 (原曲/云盘/本地/外部源)">
+            <span data-icon-slot="sliders" data-icon-size="14"></span>
+            <span>切换音源版本</span>
+          </button>
+          <button type="button" id="player-lyrics-toggle-btn" class="player-more-item" title="侧边歌词面板">
+            <span data-icon-slot="lyrics" data-icon-size="14"></span>
+            <span>侧边歌词面板</span>
+          </button>
+          <button type="button" id="player-game-mode-btn" class="player-more-item" aria-pressed="false" title="冻结背景动效与模糊，边打游戏边听零竞争">
+            <span data-icon-slot="shield" data-icon-size="14"></span>
+            <span>游戏护航模式</span>
+          </button>
+          <button type="button" id="player-stage-btn" class="player-more-item" title="全屏沉浸舞台">
+            <span data-icon-slot="maximize" data-icon-size="14"></span>
+            <span>全屏沉浸舞台</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ON-DEMAND FULL-SCREEN IMMERSIVE STAGE -->
+  <div id="immersive-stage-overlay" class="immersive-stage-overlay" role="dialog" aria-modal="true" aria-label="沉浸歌词舞台" aria-hidden="true">
+    <!-- Bounded 160x160 fluid mesh canvas mounts ONLY while stage is open -->
+    <div id="stage-ambient-host" class="stage-ambient-host" aria-hidden="true"></div>
+
+    <div class="stage-chrome">
+      <div class="stage-top-bar">
+        <div class="stage-top-left">
+          <button id="stage-close-btn" class="btn btn-ghost btn-sm" title="收起沉浸歌词舞台 (Esc)">
+            <span data-icon-slot="chevron-down" data-icon-size="16"></span>
+            <span>收起</span>
+          </button>
+          <span id="stage-origin-badge" hidden></span>
+          <span id="stage-ttml-badge" class="stage-ttml-pill hidden">AMLL 逐字</span>
+        </div>
+        <div class="stage-top-right">
+          <div class="stage-offset-group" role="group" aria-label="歌词时间轴微调">
+            <button type="button" id="stage-offset-minus" class="btn btn-ghost btn-sm stage-offset-btn" title="歌词提前 0.5 秒" aria-label="歌词提前 0.5 秒">−</button>
+            <button type="button" id="stage-offset-label" class="stage-offset-label" title="点击重置歌词偏移">0.0s</button>
+            <button type="button" id="stage-offset-plus" class="btn btn-ghost btn-sm stage-offset-btn" title="歌词延后 0.5 秒" aria-label="歌词延后 0.5 秒">+</button>
+          </div>
+          <button id="stage-toggle-translation" class="btn btn-ghost btn-sm active">译文</button>
+          <button id="stage-toggle-romaji" class="btn btn-ghost btn-sm">音译</button>
+          <button id="stage-desktop-lyrics-btn" class="btn btn-ghost btn-sm" title="切换桌面悬浮歌词">
+            <span data-icon-slot="pip" data-icon-size="14"></span>
+            <span>桌面歌词</span>
+          </button>
+          <button id="stage-queue-btn" class="btn btn-ghost btn-sm" aria-controls="play-queue-drawer" aria-expanded="false">播放队列</button>
+          <div class="stage-customize-wrapper">
+            <button type="button" id="stage-customize-btn" class="btn btn-ghost btn-sm" aria-expanded="false" aria-haspopup="dialog" title="舞台外观与歌词排版定制">
+              <span data-icon-slot="palette" data-icon-size="14"></span>
+              <span>外观</span>
+            </button>
+            <div id="stage-customize-popover" class="stage-customize-popover hidden" role="dialog" aria-label="舞台外观与歌词定制">
+              <div class="stage-custom-section">
+                <div class="stage-custom-label">舞台模式</div>
+                <select class="input-text stage-select" id="stage-theme" aria-label="舞台样式">
+                  <option value="fluid">流体歌词</option><option value="vinyl">黑胶唱机</option>
+                  <option value="poster">海报画廊</option><option value="visualizer">声场频谱</option>
+                </select>
+                <select class="input-text stage-select" id="stage-spectrum-mode" aria-label="频谱样式" hidden>
+                  <option value="bars">镜像柱状</option><option value="ring">环形声波</option><option value="wave3d">透视声浪</option>
+                </select>
+                <small id="stage-spectrum-status" role="status"></small>
+              </div>
+              <div class="stage-custom-section">
+                <div class="stage-custom-label">主题色调</div>
+                <div id="stage-theme-chips" class="stage-chip-row"></div>
+              </div>
+              <div class="stage-custom-section">
+                <div class="stage-custom-label">强调色</div>
+                <div id="stage-accent-chips" class="stage-chip-row"></div>
+              </div>
+              <div class="stage-custom-section">
+                <div class="stage-custom-row">
+                  <span class="stage-custom-label">歌词字号</span>
+                  <span id="stage-lyric-size-val" class="numeral-mono stage-custom-val">24px</span>
+                </div>
+                <input type="range" id="stage-lyric-size-slider" class="stage-custom-range" min="18" max="40" step="1" value="24" aria-label="舞台歌词字号">
+              </div>
+              <div class="stage-custom-section">
+                <div class="stage-custom-row">
+                  <span class="stage-custom-label">歌词对齐</span>
+                  <div class="stage-chip-row">
+                    <button type="button" class="stage-chip-btn" data-stage-align-btn="left">左对齐</button>
+                    <button type="button" class="stage-chip-btn" data-stage-align-btn="center">居中</button>
+                  </div>
+                </div>
+              </div>
+              <div class="stage-custom-section stage-custom-toggles">
+                <label class="stage-custom-check">
+                  <input type="checkbox" id="stage-blur-toggle">
+                  <span>非当前句柔焦景深</span>
+                </label>
+                <label class="stage-custom-check">
+                  <input type="checkbox" id="stage-tilt-toggle" checked>
+                  <span>3D 封面指针倾斜</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <button type="button" id="stage-fullscreen-btn" class="btn btn-ghost btn-sm" title="切换全屏 (F11)" aria-label="切换全屏" aria-pressed="false">
+            <span data-icon-slot="maximize" data-icon-size="16"></span>
+          </button>
+          <div class="stage-more-wrapper">
+            <button type="button" id="stage-more-btn" class="btn btn-ghost btn-sm" aria-expanded="false" aria-haspopup="menu" aria-controls="stage-more-popover" title="更多操作">
+              <span data-icon-slot="more-horizontal" data-icon-size="15"></span>
+              <span>更多</span>
+            </button>
+            <div id="stage-more-popover" class="stage-more-popover hidden" role="menu" aria-label="更多舞台操作">
+              <button type="button" id="stage-candidates-btn" class="stage-more-item" role="menuitem">
+                <span data-icon-slot="sliders" data-icon-size="14"></span>
+                <span>切换音源</span>
+              </button>
+              <button type="button" id="stage-similar-btn" class="stage-more-item" role="menuitem">
+                <span data-icon-slot="sparkles" data-icon-size="14"></span>
+                <span>相似歌曲</span>
+              </button>
+              <div class="stage-more-sep" role="separator"></div>
+              <button type="button" data-copy-line class="stage-more-item" role="menuitem">
+                <span data-icon-slot="copy" data-icon-size="14"></span>
+                <span>复制当前句</span>
+              </button>
+              <button type="button" data-copy-full class="stage-more-item" role="menuitem">
+                <span data-icon-slot="copy" data-icon-size="14"></span>
+                <span>复制全文</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage-main-grid">
+        <div class="stage-left-column">
+          <div class="stage-artwork">
+          <div class="stage-tonearm" aria-hidden="true"></div>
+          <div id="stage-cover-frame" class="stage-cover-frame">
+            <img id="stage-cover-img" class="stage-cover-img" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'><rect width='160' height='160' fill='%23ede6da'/><circle cx='80' cy='80' r='56' fill='%23262320'/><circle cx='80' cy='80' r='42' fill='none' stroke='%23f5efe6' stroke-opacity='0.1' stroke-width='1'/><circle cx='80' cy='80' r='19' fill='%236d8d72'/><circle cx='80' cy='80' r='4.2' fill='%23efe9de'/></svg>" alt="专辑封面">
+            <div id="stage-cover-fallback" class="stage-cover-fallback hidden" aria-hidden="true">
+              <span data-icon-slot="disc" data-icon-size="68"></span>
+            </div>
+          </div>
+
+          </div>
+          <div id="stage-spectrum-host"></div>
+          <div class="stage-song-meta">
+            <div class="stage-title-row">
+              <h2 id="stage-song-title" class="stage-song-title">未选择曲目</h2>
+              <button id="stage-heart-btn" class="player-inline-icon-btn" title="红心喜欢" aria-label="红心喜欢" aria-pressed="false">
+                <span data-icon-slot="heart" data-icon-size="17"></span>
+              </button>
+            </div>
+            <div id="stage-song-artist" class="stage-song-artist"></div>
+            <div class="stage-album-row">
+              <span id="stage-song-album" class="stage-song-album"></span>
+              <button type="button" id="stage-source-badge" class="btn btn-ghost btn-sm"></button>
+            </div>
+          </div>
+
+          <div class="stage-transport">
+            <div class="player-timeline-row">
+              <span id="stage-time-current" class="player-time time-current">0:00</span>
+              <div class="timeline-slider-container">
+                <div class="timeline-track">
+                  <div id="stage-chorus-marker" class="timeline-chorus-marker hidden"></div>
+                  <div id="stage-timeline-progress" class="timeline-progress"></div>
+                </div>
+                <div class="timeline-thumb" aria-hidden="true"></div>
+                <div id="stage-timeline-tooltip" class="timeline-tooltip hidden" aria-hidden="true">0:00</div>
+                <input type="range" id="stage-timeline-slider" class="timeline-slider" min="0" max="100" value="0" step="0.1" aria-label="舞台进度">
+              </div>
+              <span id="stage-time-total" class="player-time time-total">0:00</span>
+            </div>
+
+            <div class="stage-transport-buttons">
+              <button id="stage-mode-btn" class="player-btn" title="切换播放模式" aria-label="切换播放模式">
+                <span data-icon-slot="repeat" data-icon-size="15"></span>
+              </button>
+              <button id="stage-prev-btn" class="player-btn" aria-label="上一首">
+                <span data-icon-slot="skip-prev" data-icon-size="18"></span>
+              </button>
+              <button id="stage-play-btn" class="player-btn player-btn-main stage-play-btn" aria-label="播放或暂停">
+                <span data-icon-slot="play" data-icon-size="20"></span>
+              </button>
+              <button id="stage-next-btn" class="player-btn" aria-label="下一首">
+                <span data-icon-slot="skip-next" data-icon-size="18"></span>
+              </button>
+            </div>
+
+            <div id="stage-volume-group" class="stage-volume-row">
+              <button id="stage-mute-btn" class="player-btn" title="静音 / 取消静音" aria-label="静音">
+                <span data-icon-slot="volume" data-icon-size="15"></span>
+              </button>
+              <input type="range" id="stage-volume-slider" class="volume-slider stage-volume-slider" min="0" max="100" value="80" aria-label="舞台音量">
+              <span id="stage-volume-pct" class="volume-pct numeral-mono">80%</span>
+            </div>
           </div>
         </div>
 
+        <div class="stage-right-column">
+          <div id="stage-lyrics-container" class="stage-lyrics-scroller"></div>
+          <button type="button" id="stage-resume-follow" class="lyrics-resume-follow-btn" hidden>回到当前行</button>
+        </div>
       </div>
-    </section>
+    </div>
+  </div>
 
-  </main>
+  <!-- SLIDING DRAWERS -->
 
   <!-- PENDING ACTIONS DRAWER (待执行抽屉) -->
   <aside id="pending-actions-drawer" class="sliding-drawer" aria-label="待执行队列抽屉">
     <div class="drawer-header">
       <span class="drawer-title">待执行队列</span>
-      <button id="pending-drawer-close-btn" class="btn btn-ghost btn-icon" aria-label="关闭抽屉">&times;</button>
+      <button id="pending-drawer-close-btn" class="btn btn-ghost btn-icon" aria-label="关闭抽屉">
+        <span data-icon-slot="close" data-icon-size="16"></span>
+      </button>
     </div>
     <div class="drawer-body">
       <div>
@@ -354,13 +1602,40 @@
     </div>
   </aside>
 
-  <!-- RULES DRAWER INSIDE CATALOG (规则筛选抽屉) -->
+  <!-- PLAY QUEUE DRAWER (播放队列抽屉) -->
+  <aside id="play-queue-drawer" class="sliding-drawer" aria-label="播放队列">
+    <div class="drawer-header">
+      <div>
+        <span class="drawer-title">播放队列</span>
+        <span id="play-queue-meta" class="queue-meta-count">共 0 首</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <button id="play-queue-locate" class="btn btn-ghost btn-sm" hidden>定位当前</button>
+        <button id="play-queue-clear-btn" class="btn btn-ghost btn-sm">清空</button>
+        <button id="play-queue-close-btn" class="btn btn-ghost btn-icon" aria-label="关闭播放队列">
+          <span data-icon-slot="close" data-icon-size="16"></span>
+        </button>
+      </div>
+    </div>
+    <div class="history-tools queue-tabs">
+      <button class="btn btn-ghost" data-queue-tab="next" aria-pressed="true">接下来</button>
+      <button class="btn btn-ghost" data-queue-tab="history" aria-pressed="false">最近播放</button>
+    </div>
+    <div id="play-queue-list" class="drawer-body"></div>
+  </aside>
+
+  <!-- RULES DRAWER (规则筛选抽屉) -->
   <aside id="rules-drawer-panel" class="sliding-drawer" style="width: 440px;" aria-label="规则筛选抽屉">
     <div class="drawer-header">
       <span class="drawer-title">规则筛选</span>
       <div style="display: flex; align-items: center; gap: 6px;">
-        <button id="rules-add-btn" class="btn btn-primary btn-sm">+ 新建规则</button>
-        <button id="rules-drawer-close-btn" class="btn btn-ghost btn-icon" aria-label="关闭规则抽屉">&times;</button>
+        <button id="rules-add-btn" class="btn btn-primary btn-sm">
+          <span data-icon-slot="plus" data-icon-size="13"></span>
+          <span>新建规则</span>
+        </button>
+        <button id="rules-drawer-close-btn" class="btn btn-ghost btn-icon" aria-label="关闭规则抽屉">
+          <span data-icon-slot="close" data-icon-size="16"></span>
+        </button>
       </div>
     </div>
     <div class="drawer-body">
@@ -372,72 +1647,125 @@
     </div>
   </aside>
 
-  <!-- COMPACT AUDIO PLAYER BAR (Only in Catalog Workspace) -->
-  <footer id="catalog-player-bar" class="audio-player-bar" role="region" aria-label="曲库播放器">
-    <div class="player-track-info">
-      <img id="player-track-cover" class="player-cover" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='42' height='42' fill='%23161713'><rect width='42' height='42'/></svg>" alt="封面">
-      <div class="player-meta">
-        <div id="player-track-title" class="player-title">未选择曲目</div>
-        <div class="player-artist-row">
-          <div id="player-track-artist" class="player-artist">就绪</div>
-          <span id="player-source-badge" class="sr-only"></span>
-        </div>
-      </div>
-    </div>
-
-    <div class="player-center-controls">
-      <div class="player-buttons-row">
-        <button id="player-chorus-btn" class="player-btn-chorus" title="副歌循环">副歌</button>
-        <button id="player-prev-btn" class="player-btn" title="快退 5 秒" aria-label="快退 5 秒">‹ 5s</button>
-        <button id="player-play-btn" class="player-btn player-btn-main" title="播放 / 暂停" aria-label="播放或暂停">▶</button>
-        <button id="player-next-btn" class="player-btn" title="快进 5 秒" aria-label="快进 5 秒">5s ›</button>
-      </div>
-
-      <div class="player-timeline-row">
-        <span id="player-time-current" class="player-time time-current">0:00</span>
-        <div class="timeline-slider-container">
-          <div class="timeline-track">
-            <div id="player-timeline-progress" class="timeline-progress"></div>
-          </div>
-          <input type="range" id="player-timeline-slider" class="timeline-slider" min="0" max="100" value="0" step="0.1" aria-label="跳转进度">
-        </div>
-        <span id="player-time-total" class="player-time time-total">0:00</span>
-      </div>
-    </div>
-
-    <div class="player-right-controls">
-      <div class="volume-control-group">
-        <span style="font-size: 11px; color: var(--text-muted);" aria-hidden="true">音量</span>
-        <input type="range" id="player-volume-slider" class="volume-slider" min="0" max="100" value="80" aria-label="调节音量">
-      </div>
-      <button id="player-lyrics-toggle-btn" class="btn btn-ghost btn-sm" title="切换同步歌词抽屉">歌词</button>
-    </div>
-  </footer>
-
   <!-- STANDALONE LYRICS DRAWER -->
   <aside id="lyrics-drawer-panel" class="lyrics-drawer-panel" aria-label="歌词面板">
     <div class="drawer-header">
       <span class="drawer-title">同步歌词</span>
-      <button id="lyrics-drawer-close-btn" class="btn btn-ghost btn-icon" aria-label="关闭歌词">&times;</button>
+          <div class="lyrics-copy-actions"><button type="button" data-copy-line class="btn btn-ghost btn-sm">复制当前句</button><button type="button" data-copy-full class="btn btn-ghost btn-sm">复制全文</button></div>
+      <button id="lyrics-drawer-close-btn" class="btn btn-ghost btn-icon" aria-label="关闭歌词">
+        <span data-icon-slot="close" data-icon-size="16"></span>
+      </button>
     </div>
     <div id="lyrics-drawer-scroller" class="lyrics-drawer-scroller"></div>
+          <button type="button" id="drawer-resume-follow" class="lyrics-resume-follow-btn" hidden>回到当前行</button>
   </aside>
+
+  <!-- MODALS -->
+
+  <!-- MODAL: Global Ctrl+K Command & Multi-Channel Search Palette -->
+  <div id="search-palette-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-label="全局搜索面板">
+    <div class="modal-dialog search-palette-dialog">
+      <div class="search-palette-header">
+        <span data-icon-slot="search" data-icon-size="16"></span>
+        <input type="text" id="search-palette-input" class="search-palette-input" placeholder="搜索本地曲库（歌名、歌手、专辑）... 按 Tab 切换全渠道聚合搜索" autocomplete="off">
+        <button id="search-palette-clear-btn" class="btn btn-ghost btn-icon" aria-label="清除搜索" hidden>×</button>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭搜索">
+          <span data-icon-slot="close" data-icon-size="15"></span>
+        </button>
+      </div>
+      <div id="search-palette-channel-bar" class="palette-channel-bar" role="group" aria-label="检索渠道筛选">
+        <!-- Populated by search_palette.js (本地 / 全渠道聚合 / 网易云 / 酷狗概念版 / 咪咕 / QQ音乐 / 酷我 / B站) -->
+      </div>
+      <div id="search-palette-results" class="search-palette-results"></div>
+      <div class="search-palette-footer">
+        <span><kbd class="kbd">↑</kbd> <kbd class="kbd">↓</kbd> 选择</span>
+        <span><kbd class="kbd">Enter</kbd> 直接播放</span>
+        <span><kbd class="kbd">Tab</kbd> 切换本地 / 全渠道聚合</span>
+        <span><kbd class="kbd">Esc</kbd> 关闭</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Audio Candidates Switcher (切换音源版本) -->
+  <div id="audio-candidates-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="audio-candidates-title">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="audio-candidates-title" class="modal-title">切换音源版本</h3>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">
+          <span data-icon-slot="close" data-icon-size="16"></span>
+        </button>
+      </div>
+      <div id="audio-candidates-list" class="modal-body candidates-list"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: Similar Songs -->
+  <div id="similar-songs-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="similar-songs-title">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="similar-songs-title" class="modal-title">相似歌曲推荐</h3>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">
+          <span data-icon-slot="close" data-icon-size="16"></span>
+        </button>
+      </div>
+      <div id="similar-songs-list" class="modal-body candidates-list"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: Add Track to Owned Playlist -->
+  <div id="add-to-playlist-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="add-to-playlist-title">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="add-to-playlist-title" class="modal-title">添加到自建歌单</h3>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">
+          <span data-icon-slot="close" data-icon-size="16"></span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div id="add-to-playlist-song-title" class="settings-hint" style="margin-bottom: var(--space-3);"></div>
+        <div id="add-to-playlist-list" class="candidates-list"></div>
+      </div>
+    </div>
+  </div>
 
   <!-- MODAL: QR Code Login -->
   <div id="login-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
     <div class="modal-dialog">
       <div class="modal-header">
         <h3 id="login-modal-title" class="modal-title">网易云音乐账号登录</h3>
-        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">&times;</button>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">
+          <span data-icon-slot="close" data-icon-size="16"></span>
+        </button>
       </div>
       <div class="modal-body" style="display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-3);">
         <div id="qr-image-container" class="qr-code-box">
           <div class="spinner"></div>
         </div>
-        <p id="qr-status-message" style="font-size: var(--text-xs); color: var(--text-ash);">
+        <p id="qr-status-message" class="qr-status-text">
           请使用网易云音乐手机 App 扫码登录
         </p>
         <button id="qr-reload-btn" class="btn btn-secondary btn-sm">重新生成二维码</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Bilibili Native Web QR Login -->
+  <div id="bilibili-qr-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="bilibili-qr-modal-title">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="bilibili-qr-modal-title" class="modal-title">哔哩哔哩扫码授权</h3>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">
+          <span data-icon-slot="close" data-icon-size="16"></span>
+        </button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-3);">
+        <div id="bilibili-qr-image-container" class="qr-code-box">
+          <div class="spinner"></div>
+        </div>
+        <p id="bilibili-qr-status-message" class="qr-status-text">
+          请使用哔哩哔哩手机 App 扫码确认（凭证仅通过本机 DPAPI 加密保存，绝不外泄）
+        </p>
+        <button type="button" id="bilibili-qr-reload-btn" class="btn btn-secondary btn-sm">重新生成二维码</button>
       </div>
     </div>
   </div>
@@ -447,7 +1775,9 @@
     <div class="modal-dialog">
       <div class="modal-header">
         <h3 id="rule-editor-title" class="modal-title">规则编辑器</h3>
-        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">&times;</button>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">
+          <span data-icon-slot="close" data-icon-size="16"></span>
+        </button>
       </div>
       <div class="modal-body">
         <div class="rule-form-group">
@@ -473,11 +1803,102 @@
   </div>
 
   <!-- MODAL: Rule Preview -->
+  <div id="history-clear-confirm-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="history-clear-title" aria-describedby="history-clear-scope">
+    <div class="modal-dialog">
+      <div class="modal-header"><h3 id="history-clear-title">清空播放历史？</h3></div>
+      <div class="modal-body" id="history-clear-scope">清空当前账号的全部播放历史（即使当前处于筛选或搜索状态，也会清空全部历史记录）。</div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-modal-close>取消</button><button class="btn btn-danger" id="history-confirm-clear">清空全部历史</button></div>
+    </div>
+  </div>
+  <div id="eq-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="eq-title">
+    <div class="modal-dialog">
+      <div class="modal-header"><h3 class="modal-title" id="eq-title">十段均衡器</h3>
+        <span id="eq-status" class="source-badge" role="status">已关闭</span>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭均衡器">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="eq-switch"><input type="checkbox" role="switch" id="eq-enabled">启用均衡器</label>
+        <select id="eq-preset" aria-label="均衡器预设" hidden>
+          <option value="custom" disabled>自定义</option>
+          <option value="flat">平直</option>
+          <option value="pop">流行</option>
+          <option value="vocal">人声</option>
+          <option value="bass">低音</option>
+          <option value="classical">古典</option>
+          <option value="electronic">电子</option>
+        </select>
+        <div class="eq-presets" role="group" aria-label="预设">
+          <button class="btn btn-ghost btn-sm" data-eq-preset="flat">平直</button>
+          <button class="btn btn-ghost btn-sm" data-eq-preset="pop">流行</button>
+          <button class="btn btn-ghost btn-sm" data-eq-preset="vocal">人声</button>
+          <button class="btn btn-ghost btn-sm" data-eq-preset="bass">低音</button>
+          <button class="btn btn-ghost btn-sm" data-eq-preset="classical">古典</button>
+          <button class="btn btn-ghost btn-sm" data-eq-preset="electronic">电子</button>
+          <button class="btn btn-secondary btn-sm" id="eq-reset">重置平直</button>
+        </div>
+      <div class="eq-grid">
+        <label>
+          32 Hz
+          <input type="range" data-eq-band="0" min="-12" max="12" step="0.5">
+          <output></output>
+        </label>
+        <label>
+          64 Hz
+          <input type="range" data-eq-band="1" min="-12" max="12" step="0.5">
+          <output></output>
+        </label>
+        <label>
+          125 Hz
+          <input type="range" data-eq-band="2" min="-12" max="12" step="0.5">
+          <output></output>
+        </label>
+        <label>
+          250 Hz
+          <input type="range" data-eq-band="3" min="-12" max="12" step="0.5">
+          <output></output>
+        </label>
+        <label>
+          500 Hz
+          <input type="range" data-eq-band="4" min="-12" max="12" step="0.5">
+          <output></output>
+        </label>
+        <label>
+          1000 Hz
+          <input type="range" data-eq-band="5" min="-12" max="12" step="0.5">
+          <output></output>
+        </label>
+        <label>
+          2000 Hz
+          <input type="range" data-eq-band="6" min="-12" max="12" step="0.5">
+          <output></output>
+        </label>
+        <label>
+          4000 Hz
+          <input type="range" data-eq-band="7" min="-12" max="12" step="0.5">
+          <output></output>
+        </label>
+        <label>
+          8000 Hz
+          <input type="range" data-eq-band="8" min="-12" max="12" step="0.5">
+          <output></output>
+        </label>
+        <label>
+          16000 Hz
+          <input type="range" data-eq-band="9" min="-12" max="12" step="0.5">
+          <output></output>
+        </label>
+      </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-modal-close>关闭</button></div>
+    </div>
+  </div>
   <div id="rule-preview-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="rule-preview-title">
     <div class="modal-dialog">
       <div class="modal-header">
         <h3 id="rule-preview-title" class="modal-title">命中歌曲列表</h3>
-        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">&times;</button>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">
+          <span data-icon-slot="close" data-icon-size="16"></span>
+        </button>
       </div>
       <div class="modal-body" id="rule-preview-songs-list" style="max-height: 380px; overflow-y: auto;"></div>
       <div class="modal-footer">
@@ -491,11 +1912,13 @@
     <div class="modal-dialog">
       <div class="modal-header">
         <h3 class="modal-title">歌曲详情</h3>
-        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">&times;</button>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">
+          <span data-icon-slot="close" data-icon-size="16"></span>
+        </button>
       </div>
       <div class="modal-body" style="display: flex; gap: var(--space-4);">
-        <img id="track-modal-cover" style="width: 110px; height: 110px; border-radius: var(--radius-control); object-fit: cover; background: var(--bg-night);" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='110' height='110' fill='%23161713'><rect width='110' height='110'/></svg>" alt="封面">
-        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+        <img id="track-modal-cover" style="width: 110px; height: 110px; border-radius: var(--radius-control); object-fit: cover; background: var(--bg-well);" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'><rect width='160' height='160' fill='%23ede6da'/><circle cx='80' cy='80' r='56' fill='%23262320'/><circle cx='80' cy='80' r='42' fill='none' stroke='%23f5efe6' stroke-opacity='0.1' stroke-width='1'/><circle cx='80' cy='80' r='19' fill='%236d8d72'/><circle cx='80' cy='80' r='4.2' fill='%23efe9de'/></svg>" alt="封面">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0;">
           <h4 id="track-modal-title" style="font-size: var(--text-base); font-weight: 700; color: var(--text-bone);"></h4>
           <div id="track-modal-artist" style="font-size: var(--text-sm); color: var(--text-ash);"></div>
           <div id="track-modal-album" style="font-size: var(--text-xs); color: var(--text-muted);"></div>
@@ -505,6 +1928,7 @@
         </div>
       </div>
       <div class="modal-footer">
+        <button id="track-modal-add-pl-btn" class="btn btn-secondary btn-sm">加入自建歌单</button>
         <button id="track-modal-stage-btn" class="btn btn-danger btn-sm">加入待处理</button>
         <button id="track-modal-play-btn" class="btn btn-primary btn-sm">播放此曲</button>
       </div>
@@ -516,11 +1940,13 @@
     <div class="modal-dialog">
       <div class="modal-header">
         <h3 id="create-pl-title" class="modal-title">创建云端新歌单</h3>
-        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">&times;</button>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">
+          <span data-icon-slot="close" data-icon-size="16"></span>
+        </button>
       </div>
       <div class="modal-body">
         <p style="font-size: var(--text-xs); color: var(--text-ash); margin-bottom: var(--space-3);">
-          将为选中的 <strong id="create-playlist-song-count">0</strong> 首歌曲创建新的网易云歌单。
+          <strong id="create-playlist-song-count"></strong>
         </p>
         <div class="rule-form-group">
           <label class="form-label" for="create-playlist-name-input">歌单标题</label>
@@ -539,13 +1965,15 @@
     <div class="modal-dialog">
       <div class="modal-header">
         <h3 id="batch-confirm-title" class="modal-title">确认云端变更</h3>
-        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">&times;</button>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">
+          <span data-icon-slot="close" data-icon-size="16"></span>
+        </button>
       </div>
       <div class="modal-body">
         <div id="batch-confirm-summary-list" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--space-4);"></div>
-        <p style="font-size: var(--text-xs); color: var(--text-muted); line-height: 1.4;">
-          · 自动快照将在执行前创建，可在“云端 - 更多工具”中查看备份。<br>
-          · 执行后将调用网易云音乐接口实际处理对应曲目。
+        <p style="font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5;">
+          · 打开此窗口时清单已锁定，执行时仅处理以上确认的曲目。<br>
+          · 自动快照将在执行前创建，可在“设置与同步 - 同步与备份”中查看备份。
         </p>
       </div>
       <div class="modal-footer">
@@ -560,9 +1988,12 @@
     <div class="modal-dialog">
       <div class="modal-header">
         <h3 id="import-modal-title" class="modal-title">导入本地曲库文件</h3>
-        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">&times;</button>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">
+          <span data-icon-slot="close" data-icon-size="16"></span>
+        </button>
       </div>
       <div class="modal-body">
+        <label><input type="checkbox" id="import-replace"> 替换对应歌单的曲目（默认合并，替换前备份）</label>
         <div id="import-dropzone" class="import-dropzone" role="button" tabindex="0" aria-label="选择 JSON 或 CSV 曲库导出文件">
           <div style="font-weight: 600; color: var(--text-bone);">拖拽 .json 或 .csv 文件至此处</div>
           <div style="font-size: var(--text-xs); color: var(--text-ash);">或点击选择本地文件</div>
@@ -572,10 +2003,29 @@
     </div>
   </div>
 
+  <!-- MODAL: Keyboard Shortcuts Help (?) -->
+  <div id="shortcuts-help-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="shortcuts-help-title">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="shortcuts-help-title" class="modal-title">快捷键一览</h3>
+        <button class="btn btn-ghost btn-icon" data-modal-close aria-label="关闭">
+          <span data-icon-slot="close" data-icon-size="16"></span>
+        </button>
+      </div>
+      <div id="shortcuts-help-body" class="modal-body"></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" data-modal-close>知道了</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification Container -->
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
+  <!-- Unified Right-Click Context Menu Host (Populated by context_menu.js) -->
+  <div id="context-menu-host"></div>
+
   <!-- Main JavaScript Application Bootstrap -->
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/app.js?v=w4"></script>
 </body>
 </html>

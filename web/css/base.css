@@ -1,21 +1,15 @@
 /* ==========================================================================
    Pruner Studio - Base Design System & Quiet Premium Reset
+   Memory-safe static radial tint, modern CJK font stack, semantic tokens.
    ========================================================================== */
 
-@font-face {
-  font-family: "Marcellus";
-  src: url("../assets/fonts/Marcellus-Regular.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-}
 
 :root {
-  /* Clean Neutral Charcoal Dark Tokens (Zero greenish tint) */
-  --bg-night: #121214;
-  --bg-carbon: #1c1c1f;
-  --text-bone: #f5f5f7;
-  --text-ash: #a1a1a6;
+  /* Clean Neutral Charcoal Dark Tokens (100% Opaque Chrome) */
+  --bg-night: #111215;
+  --bg-carbon: #18191e;
+  --text-bone: #f2f1ed;
+  --text-ash: #a0a2aa;
   --color-keep: #62a368;
   --color-prune: #df584c;
 
@@ -23,22 +17,38 @@
   --bg-app: var(--bg-night);
   --bg-primary: var(--bg-night);
   --bg-surface: var(--bg-carbon);
-  --bg-card: #232328;
-  --bg-elevated: #2c2c32;
-  --bg-hover: #36363d;
-  --bg-active: #40404a;
+  --bg-card: #1d1f25;
+  --bg-well: #15161b;
+  --bg-elevated: #23252d;
+  --bg-hover: #2a2d36;
+  --bg-active: #313540;
+  --bg-rail: #141519;
+  --bg-header: #111215;
+  --bg-player: #16171c;
+  --bg-track: #2a2d36;
+  --bg-backdrop: rgba(12, 13, 15, 0.82);
+  --bg-stripe: rgba(245, 245, 247, 0.018);
+  --bg-pill-muted: rgba(245, 245, 247, 0.05);
+  --btn-primary-bg: #ecebe6;
+  --btn-primary-hover: #ffffff;
+  --btn-primary-text: #111215;
+  --player-play-bg: #ecebe6;
+  --player-play-fg: #111215;
+  --player-shadow: 0 -2px 12px rgba(0, 0, 0, 0.28);
+  --source-cloud-text: #9bc3df;
 
   --text-primary: var(--text-bone);
   --text-secondary: var(--text-ash);
-  --text-muted: #6e6e73;
-  --text-disabled: #48484a;
+  --text-muted: #8e9099;
+  --text-disabled: #52545d;
 
-  /* Hairlines: Clean neutral white with precise opacity */
+  /* Hairlines & High-Contrast Control Borders */
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-medium: rgba(255, 255, 255, 0.14);
   --border-strong: rgba(255, 255, 255, 0.24);
+  --border-control: #91939d;
 
-  /* Semantic State Colors */
+  /* Semantic State Colors (NEVER overridden by theme or cover palette) */
   --semantic-keep: var(--color-keep);
   --semantic-keep-hover: #72b579;
   --semantic-keep-subtle: rgba(98, 163, 104, 0.16);
@@ -47,21 +57,31 @@
   --semantic-prune-hover: #eb6a5f;
   --semantic-prune-subtle: rgba(223, 88, 76, 0.16);
 
+  /* Theme Accent Tokens (controlled by theme.js; separate from Keep/Prune) */
+  --accent: #62a368;
+  --accent-text: #76be7d;
+  --accent-subtle: rgba(98, 163, 104, 0.16);
+  --accent-contrast: #111214;
+  --font-scale: 1;
+
   --accent-warning: #d69e4e;
   --accent-warning-subtle: rgba(214, 158, 78, 0.16);
   --accent-alt: #a896c2;
   --accent-alt-subtle: rgba(168, 150, 194, 0.16);
 
-  /* Cover-led non-semantic accent */
+  /* Cover-led non-semantic accents (stage/player glow, or --accent when accent_mode === 'cover') */
   --cover-accent: #7ca384;
   --cover-accent-subtle: rgba(124, 163, 132, 0.18);
+  --cover-accent-2: #6b8fa8;
+  --cover-accent-2-subtle: rgba(107, 143, 168, 0.15);
 
-  /* Typography: Precision Proportions */
-  --font-sans: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-brand: "Marcellus", Georgia, "Times New Roman", serif;
+  /* Modern CJK Typography Stack */
+  --font-sans: "Segoe UI Variable Text", "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Microsoft YaHei UI", "Noto Sans CJK SC", sans-serif;
+  --font-editorial: "Songti SC", "STSong", "Noto Serif CJK SC", "Iowan Old Style", Georgia, serif;
+  --font-brand: var(--font-sans);
   --font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
 
-  --text-xs: 0.75rem;    /* 12px */
+  --text-xs: 0.78125rem; /* 12.5px */
   --text-sm: 0.875rem;   /* 14px */
   --text-base: 1rem;     /* 16px */
   --text-lg: 1.125rem;   /* 18px */
@@ -69,7 +89,7 @@
   --text-2xl: 1.5rem;    /* 24px */
   --text-3xl: 2rem;      /* 32px */
 
-  /* Spacing scale: 4, 8, 12, 16, 24, 32, 48px */
+  /* Spacing & Density Scale */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -77,8 +97,13 @@
   --space-6: 24px;
   --space-8: 32px;
   --space-12: 48px;
+  --density-pad-y: 8px;
+  --density-pad-x: 12px;
+  --density-row-pad-y: 9px;
+  --density-card-pad: 16px;
+  --density-gap: 12px;
 
-  /* Geometry: 6px controls, 10px surfaces */
+  /* Geometry */
   --radius-control: 6px;
   --radius-surface: 10px;
   --radius-full: 9999px;
@@ -86,27 +111,352 @@
   /* Shadows */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.52);
   --shadow-drawer: -10px 0 35px rgba(0, 0, 0, 0.6);
+  --surface-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.025) 0%, rgba(255, 255, 255, 0) 100%);
+  --rim-top: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --rim-btn: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.28), 0 6px 16px rgba(0, 0, 0, 0.20);
+  --shadow-card-hover: 0 4px 10px rgba(0, 0, 0, 0.32), 0 12px 26px rgba(0, 0, 0, 0.28);
+  --shadow-press: inset 0 2px 4px rgba(0, 0, 0, 0.34);
 
-  /* Motion: Fast 120ms, Standard 180ms, Decision 260ms */
+  /* Braun / Dieter Rams Analog Radio Tuner Dial Tokens */
+  --tuner-face-start: #21232a;
+  --tuner-face-end: #16181e;
+  --tuner-bezel: rgba(255, 255, 255, 0.18);
+  --tuner-inner-ring: rgba(255, 255, 255, 0.09);
+  --tuner-tick-major: #ccc6bc;
+  --tuner-tick-minor: rgba(204, 198, 188, 0.34);
+  --tuner-needle: #e09f3e;
+  --tuner-plate-bg: #13151a;
+  --tuner-plate-border: rgba(255, 255, 255, 0.13);
+  --tuner-plate-text: #ebe4d6;
+  --tuner-hub-bg: #292c35;
+  --tuner-hub-ring: #74706a;
+
+  /* Motion */
   --transition-fast: 120ms ease;
   --transition-normal: 180ms ease;
-  --transition-deck: 260ms ease;
+  --transition-deck: 220ms ease;
+  --ease-spring: cubic-bezier(0.22, 1.25, 0.36, 1);
+  --ease-out-quart: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-press: cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* Layout */
-  --header-height: 58px;
-  --player-height: 72px;
-  --max-content-width: 1280px;
+  /* Layout Metrics */
+  --rail-width: 216px;
+  --rail-width-collapsed: 64px;
+  --header-height: 56px;
+  --player-height: 84px;
+  --max-content-width: min(1960px, 100%);
 
-  --z-cover-field: -1;
+  --z-cover-field: 0;
   --z-base: 1;
+  --z-rail: 110;
   --z-header: 100;
   --z-player: 200;
-  --z-drawer: 300;
+  --z-drawer: 460;
+  --z-stage: 420;
   --z-modal-backdrop: 500;
   --z-modal: 510;
+  --z-context-menu: 700;
   --z-toast: 1000;
+}
+
+/* Midnight OLED Theme */
+html[data-theme="midnight"] {
+  --bg-night: #000000;
+  --bg-carbon: #0d0d10;
+  --bg-card: #141418;
+  --bg-well: #0a0a0d;
+  --bg-elevated: #1c1c22;
+  --bg-hover: #222229;
+  --bg-active: #2a2a33;
+  --bg-rail: #08080a;
+  --bg-header: #000000;
+  --bg-player: #0b0b0e;
+  --bg-track: #222229;
+  --bg-backdrop: rgba(0, 0, 0, 0.86);
+  --text-bone: #f2f1ed;
+  --text-ash: #a3a3ab;
+  --text-primary: #f2f1ed;
+  --text-secondary: #a3a3ab;
+  --text-muted: #8e9099;
+  --text-disabled: #4f515a;
+  --border-subtle: rgba(255, 255, 255, 0.09);
+  --border-medium: rgba(255, 255, 255, 0.15);
+  --border-strong: rgba(255, 255, 255, 0.25);
+  --border-control: #878994;
+  --accent-text: #76be7d;
+  --btn-primary-bg: #f2f1ed;
+  --btn-primary-hover: #ffffff;
+  --btn-primary-text: #000000;
+  --player-play-bg: #f2f1ed;
+  --player-play-fg: #000000;
+  --player-shadow: none;
+  --surface-sheen: none;
+  --rim-top: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --shadow-card: none;
+  --tuner-face-start: #15161b;
+  --tuner-face-end: #0b0c0f;
+  --tuner-bezel: rgba(255, 255, 255, 0.2);
+  --tuner-needle: #e6a645;
+  --tuner-plate-bg: #08090c;
+}
+
+/* Crisp Editorial Paper Light Theme (Body contrast >= 4.5:1) */
+html[data-theme="light"] {
+  --bg-night: #f5f3ee;
+  --bg-carbon: #fdfcfa;
+  --text-bone: #1b1a18;
+  --text-ash: #54524c;
+  --bg-card: #fdfcfa;
+  --bg-well: #eceae3;
+  --bg-elevated: #e8e5dd;
+  --bg-hover: #e2dfd6;
+  --bg-active: #d9d5cb;
+  --bg-rail: #efede7;
+  --bg-header: #f5f3ee;
+  --bg-player: #fcfbf8;
+  --bg-track: #dfdcd4;
+  --bg-backdrop: rgba(27, 26, 24, 0.42);
+  --bg-stripe: rgba(27, 26, 24, 0.022);
+  --bg-pill-muted: rgba(27, 26, 24, 0.05);
+  --btn-primary-bg: #33312d;
+  --btn-primary-hover: #44413c;
+  --btn-primary-text: #fcfbf8;
+  --player-play-bg: var(--accent-text);
+  --player-play-fg: #ffffff;
+  --player-shadow: 0 -2px 10px rgba(27, 26, 24, 0.04);
+  --source-cloud-text: #2c5d82;
+
+  --text-primary: #1b1a18;
+  --text-secondary: #54524c;
+  --text-muted: #5a5851;
+  --text-disabled: #a5a29b;
+
+  --border-subtle: rgba(27, 26, 24, 0.075);
+  --border-medium: rgba(27, 26, 24, 0.135);
+  --border-strong: rgba(27, 26, 24, 0.23);
+  --border-control: #64615b;
+  --accent-text: #296030;
+
+  --accent-warning: #9a6614;
+  --accent-alt: #6f5b93;
+
+  --shadow-sm: 0 1px 2px rgba(27, 26, 24, 0.06);
+  --shadow-md: 0 4px 14px rgba(27, 26, 24, 0.09);
+  --shadow-lg: 0 12px 32px rgba(27, 26, 24, 0.13);
+  --shadow-drawer: -8px 0 28px rgba(27, 26, 24, 0.11);
+  --surface-sheen: none;
+  --rim-top: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  --rim-btn: inset 0 1px 0 rgba(255, 255, 255, 0.80);
+  --shadow-card: 0 1px 2px rgba(27, 26, 24, 0.04), 0 4px 12px rgba(27, 26, 24, 0.03);
+  --shadow-card-hover: 0 3px 8px rgba(27, 26, 24, 0.07), 0 10px 20px rgba(27, 26, 24, 0.05);
+  --shadow-press: inset 0 1px 2px rgba(27, 26, 24, 0.12);
+  --tuner-face-start: #f5f3ee;
+  --tuner-face-end: #e9e5dc;
+  --tuner-bezel: #bfb9ad;
+  --tuner-inner-ring: rgba(27, 26, 24, 0.12);
+  --tuner-tick-major: #3d3b37;
+  --tuner-tick-minor: rgba(61, 59, 55, 0.32);
+  --tuner-needle: #bd761b;
+  --tuner-plate-bg: #faf9f5;
+  --tuner-plate-border: #cec9be;
+  --tuner-plate-text: #2a2825;
+  --tuner-hub-bg: #eae7df;
+  --tuner-hub-ring: #6e6a62;
+}
+
+/* Celadon Mist Soft Light Theme */
+html[data-theme="celadon"] {
+  --bg-night: #ebf0ee;
+  --bg-carbon: #f7faf9;
+  --text-bone: #172420;
+  --text-ash: #445650;
+  --bg-card: #f7faf9;
+  --bg-well: #e1e9e6;
+  --bg-elevated: #dce5e1;
+  --bg-hover: #d3dfda;
+  --bg-active: #c8d6d0;
+  --bg-rail: #e4ebe8;
+  --bg-header: #ebf0ee;
+  --bg-player: #f5f9f7;
+  --bg-track: #d0dcd7;
+  --bg-backdrop: rgba(23, 36, 32, 0.42);
+  --bg-stripe: rgba(23, 36, 32, 0.022);
+  --bg-pill-muted: rgba(23, 36, 32, 0.05);
+  --btn-primary-bg: #233731;
+  --btn-primary-hover: #2f4840;
+  --btn-primary-text: #f7faf9;
+  --player-play-bg: var(--accent-text);
+  --player-play-fg: #f7faf9;
+  --player-shadow: 0 -2px 10px rgba(23, 36, 32, 0.04);
+  --source-cloud-text: #225c6e;
+  --text-primary: #172420;
+  --text-secondary: #445650;
+  --text-muted: #4a5c56;
+  --text-disabled: #96aaa3;
+  --border-subtle: rgba(23, 36, 32, 0.08);
+  --border-medium: rgba(23, 36, 32, 0.14);
+  --border-strong: rgba(23, 36, 32, 0.24);
+  --border-control: #52645e;
+  --accent-text: #245a2b;
+  --accent-warning: #8f5c14;
+  --accent-alt: #5b6d88;
+  --shadow-sm: 0 1px 2px rgba(23, 36, 32, 0.06);
+  --shadow-md: 0 4px 14px rgba(23, 36, 32, 0.09);
+  --shadow-lg: 0 12px 32px rgba(23, 36, 32, 0.13);
+  --shadow-drawer: -8px 0 28px rgba(23, 36, 32, 0.11);
+  --surface-sheen: none;
+  --rim-top: inset 0 1px 0 rgba(255, 255, 255, 0.70);
+  --rim-btn: inset 0 1px 0 rgba(255, 255, 255, 0.76);
+  --shadow-card: 0 1px 2px rgba(23, 36, 32, 0.04), 0 4px 12px rgba(23, 36, 32, 0.03);
+  --shadow-card-hover: 0 3px 8px rgba(23, 36, 32, 0.07), 0 10px 20px rgba(23, 36, 32, 0.05);
+  --shadow-press: inset 0 1px 2px rgba(23, 36, 32, 0.12);
+  --tuner-face-start: #edf2f0;
+  --tuner-face-end: #dfe8e4;
+  --tuner-bezel: #aebfb9;
+  --tuner-inner-ring: rgba(23, 36, 32, 0.13);
+  --tuner-tick-major: #2d423b;
+  --tuner-tick-minor: rgba(45, 66, 59, 0.32);
+  --tuner-needle: #b8731a;
+  --tuner-plate-bg: #f5f9f7;
+  --tuner-plate-border: #bdd0c9;
+  --tuner-plate-text: #1f312b;
+  --tuner-hub-bg: #e1e9e6;
+  --tuner-hub-ring: #5a7068;
+}
+
+/* Warm Sunlit Parchment Light Theme (Primary Light Anchor) */
+html[data-theme="parchment"] {
+  --bg-night: #f3ede2;
+  --bg-carbon: #fbf8f2;
+  --text-bone: #241e17;
+  --text-ash: #584e42;
+  --bg-card: #fbf8f2;
+  --bg-well: #ede5d7;
+  --bg-elevated: #eae1d1;
+  --bg-hover: #e5dac7;
+  --bg-active: #ddd0ba;
+  --bg-rail: #efe8db;
+  --bg-header: #f3ede2;
+  --bg-player: #faf6ee;
+  --bg-track: #dfd5c4;
+  --bg-backdrop: rgba(38, 30, 20, 0.42);
+  --bg-stripe: rgba(38, 30, 20, 0.022);
+  --bg-pill-muted: rgba(38, 30, 20, 0.05);
+  --btn-primary-bg: #3a3127;
+  --btn-primary-hover: #4b4033;
+  --btn-primary-text: #faf6ee;
+  --player-play-bg: var(--accent-text);
+  --player-play-fg: #fcf9f3;
+  --player-shadow: 0 -2px 10px rgba(36, 30, 23, 0.04);
+  --source-cloud-text: #345c7d;
+  --text-primary: #241e17;
+  --text-secondary: #584e42;
+  --text-muted: #5c5145;
+  --text-disabled: #a89b8b;
+  --border-subtle: rgba(38, 30, 20, 0.08);
+  --border-medium: rgba(38, 30, 20, 0.14);
+  --border-strong: rgba(38, 30, 20, 0.24);
+  --border-control: #685b4d;
+  --accent-text: #2a6131;
+  --accent-warning: #925c12;
+  --accent-alt: #775b82;
+  --shadow-sm: 0 1px 2px rgba(36, 30, 23, 0.06);
+  --shadow-md: 0 4px 14px rgba(36, 30, 23, 0.09);
+  --shadow-lg: 0 12px 32px rgba(36, 30, 23, 0.13);
+  --shadow-drawer: -8px 0 28px rgba(36, 30, 23, 0.11);
+  --surface-sheen: none;
+  --rim-top: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  --rim-btn: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  --shadow-card: 0 1px 2px rgba(36, 30, 23, 0.04), 0 4px 12px rgba(36, 30, 23, 0.03);
+  --shadow-card-hover: 0 3px 8px rgba(36, 30, 23, 0.07), 0 10px 20px rgba(36, 30, 23, 0.05);
+  --shadow-press: inset 0 1px 2px rgba(36, 30, 23, 0.12);
+  --tuner-face-start: #f4f0e8;
+  --tuner-face-end: #eae3d5;
+  --tuner-bezel: #bfb4a2;
+  --tuner-inner-ring: rgba(68, 56, 42, 0.14);
+  --tuner-tick-major: #4a3f33;
+  --tuner-tick-minor: rgba(74, 63, 51, 0.34);
+  --tuner-needle: #c47a1f;
+  --tuner-plate-bg: #f8f4ec;
+  --tuner-plate-border: #cbbda9;
+  --tuner-plate-text: #3a3127;
+  --tuner-hub-bg: #ede5d7;
+  --tuner-hub-ring: #7c6f5e;
+}
+
+@media (prefers-color-scheme: light) {
+  html[data-theme="auto"] {
+    --bg-night: #f5f3ee;
+    --bg-carbon: #fdfcfa;
+    --text-bone: #1b1a18;
+    --text-ash: #54524c;
+    --bg-card: #fdfcfa;
+    --bg-well: #eceae3;
+    --bg-elevated: #e8e5dd;
+    --bg-hover: #e2dfd6;
+    --bg-active: #d9d5cb;
+    --bg-rail: #efede7;
+    --bg-header: #f5f3ee;
+    --bg-player: #fcfbf8;
+    --bg-track: #dfdcd4;
+    --bg-backdrop: rgba(27, 26, 24, 0.42);
+    --bg-stripe: rgba(27, 26, 24, 0.022);
+    --bg-pill-muted: rgba(27, 26, 24, 0.05);
+    --btn-primary-bg: #33312d;
+    --btn-primary-hover: #44413c;
+    --btn-primary-text: #fcfbf8;
+    --player-play-bg: var(--accent-text);
+    --player-play-fg: #ffffff;
+    --player-shadow: 0 -2px 10px rgba(27, 26, 24, 0.04);
+    --source-cloud-text: #2c5d82;
+    --text-primary: #1b1a18;
+    --text-secondary: #54524c;
+    --text-muted: #5a5851;
+    --text-disabled: #a5a29b;
+    --border-subtle: rgba(27, 26, 24, 0.075);
+    --border-medium: rgba(27, 26, 24, 0.135);
+    --border-strong: rgba(27, 26, 24, 0.23);
+    --border-control: #64615b;
+    --accent-text: #296030;
+    --accent-warning: #9a6614;
+    --accent-alt: #6f5b93;
+    --shadow-sm: 0 1px 2px rgba(27, 26, 24, 0.06);
+    --shadow-md: 0 4px 14px rgba(27, 26, 24, 0.09);
+    --shadow-lg: 0 12px 32px rgba(27, 26, 24, 0.13);
+    --shadow-drawer: -8px 0 28px rgba(27, 26, 24, 0.11);
+    --surface-sheen: none;
+    --rim-top: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+    --rim-btn: inset 0 1px 0 rgba(255, 255, 255, 0.80);
+    --shadow-card: 0 1px 2px rgba(27, 26, 24, 0.04), 0 4px 12px rgba(27, 26, 24, 0.03);
+    --shadow-card-hover: 0 3px 8px rgba(27, 26, 24, 0.07), 0 10px 20px rgba(27, 26, 24, 0.05);
+    --shadow-press: inset 0 1px 2px rgba(27, 26, 24, 0.12);
+    --tuner-face-start: #f5f3ee;
+    --tuner-face-end: #e9e5dc;
+    --tuner-bezel: #bfb9ad;
+    --tuner-inner-ring: rgba(27, 26, 24, 0.12);
+    --tuner-tick-major: #3d3b37;
+    --tuner-tick-minor: rgba(61, 59, 55, 0.32);
+    --tuner-needle: #bd761b;
+    --tuner-plate-bg: #faf9f5;
+    --tuner-plate-border: #cec9be;
+    --tuner-plate-text: #2a2825;
+    --tuner-hub-bg: #eae7df;
+    --tuner-hub-ring: #6e6a62;
+  }
+}
+
+/* Compact Density Mode */
+html[data-density="compact"] {
+  --density-pad-y: 5px;
+  --density-pad-x: 10px;
+  --density-row-pad-y: 5px;
+  --density-card-pad: 12px;
+  --density-gap: 8px;
+  --header-height: 48px;
+  --player-height: 76px;
 }
 
 /* Box Sizing & Reset */
@@ -118,13 +468,11 @@
 
 html {
   font-family: var(--font-sans);
-  font-size: 16px;
+  font-size: calc(16px * var(--font-scale, 1));
   line-height: 1.5;
   color: var(--text-bone);
   background-color: var(--bg-night);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
+  text-rendering: auto;
   height: 100%;
 }
 
@@ -136,6 +484,13 @@ body {
   flex-direction: column;
   overflow-x: hidden;
   position: relative;
+}
+
+/* Crisp inline SVG defaults */
+.icon-svg {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
 }
 
 /* Monospace numerals with tabular numbers */
@@ -150,22 +505,30 @@ body {
   letter-spacing: 0.04em;
 }
 
-/* Ambient Cover Field Backdrop Signature (Soft and natural) */
+/* Memory-Safe Lightweight Static Top Ambient Radial Tint */
 .ambient-cover-field {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  bottom: 0;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  filter: blur(100px);
-  opacity: 0.16;
+  height: 360px;
+  background:
+    radial-gradient(64% 100% at 24% 0%, var(--cover-accent-subtle) 0%, transparent 72%),
+    radial-gradient(52% 90% at 78% 0%, var(--cover-accent-2-subtle) 0%, transparent 70%);
+  opacity: 0.72;
   pointer-events: none;
   z-index: var(--z-cover-field);
-  transition: background-image var(--transition-deck);
-  will-change: background-image;
+  transition: opacity 220ms ease;
+}
+
+html[data-theme="light"] .ambient-cover-field,
+html[data-theme="celadon"] .ambient-cover-field,
+html[data-theme="parchment"] .ambient-cover-field {
+  opacity: 0.26;
+}
+
+[data-visual-mode="quiet_eco"] .ambient-cover-field {
+  opacity: 0.25;
 }
 
 /* Scrollbars */
@@ -175,7 +538,7 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-night);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -193,9 +556,9 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid var(--cover-accent) !important;
+  outline: 2px solid var(--accent) !important;
   outline-offset: 2px !important;
-  box-shadow: 0 0 0 2px var(--bg-night), 0 0 0 4px var(--cover-accent);
+  box-shadow: 0 0 0 2px var(--bg-night), 0 0 0 4px var(--accent);
 }
 
 /* Prefers Reduced Motion */
@@ -204,7 +567,6 @@ textarea:focus-visible,
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
-    transform: none !important;
     scroll-behavior: auto !important;
   }
 }
@@ -224,4 +586,182 @@ textarea:focus-visible,
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+.text-danger {
+  color: var(--semantic-prune);
+}
+
+html[data-theme="nordic"] {
+  --bg-night: #111822;
+  --bg-carbon: #19222e;
+  --bg-card: #222d36;
+  --bg-well: #141c27;
+  --bg-elevated: #23252d;
+  --bg-track: #28333c;
+  --bg-rail: #19222e;
+  --bg-header: #111822;
+  --bg-player: #19222e;
+  --text-muted: #9b9ca3;
+  --border-control: #8c9eb2;
+  --accent-text: #7cc783;
+}
+
+html[data-theme="espresso"] {
+  --bg-night: #181412;
+  --bg-carbon: #201a17;
+  --bg-card: #2b231f;
+  --bg-well: #1c1714;
+  --bg-elevated: #23252d;
+  --bg-track: #312925;
+  --bg-rail: #201a17;
+  --bg-header: #181412;
+  --bg-player: #201a17;
+  --text-muted: #9b9ca3;
+  --border-control: #9a8c82;
+  --accent-text: #7cc783;
+}
+
+html[data-theme="emerald"] {
+  --bg-night: #101714;
+  --bg-carbon: #19231e;
+  --bg-card: #222d25;
+  --bg-well: #141d19;
+  --bg-elevated: #23252d;
+  --bg-track: #28332b;
+  --bg-rail: #19231e;
+  --bg-header: #101714;
+  --bg-player: #19231e;
+  --text-muted: #9b9ca3;
+  --border-control: #89a094;
+  --accent-text: #7cc783;
+}
+
+html[data-theme="dynamic"] {
+  --bg-night: var(--album-0, #131518);
+  --bg-carbon: var(--album-1, #1b1d20);
+  --bg-card: var(--album-2, #222427);
+  --bg-well: var(--album-0, #131518);
+  --bg-track: var(--album-2, #222427);
+  --bg-rail: var(--bg-carbon);
+  --bg-header: var(--bg-night);
+  --bg-player: var(--bg-carbon);
+  --text-muted: #9b9ca3;
+  --border-control: #8e9099;
+  --accent-text: #7cc783;
+}
+
+[data-gpu-paused="true"] *, [data-gpu-paused="true"] *::before, [data-gpu-paused="true"] *::after {
+  animation-play-state: paused !important;
+}
+[data-gpu-mode="eco"] *, [data-gpu-mode="eco"] *::before, [data-gpu-mode="eco"] *::after,
+html[data-game-mode="true"] *, html[data-game-mode="true"] *::before, html[data-game-mode="true"] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+[data-gpu-mode="eco"] .btn:hover,
+[data-gpu-mode="eco"] .btn:active,
+[data-gpu-mode="eco"] .player-btn:hover,
+[data-gpu-mode="eco"] .player-btn:active,
+[data-gpu-mode="eco"] .player-btn-main:hover,
+[data-gpu-mode="eco"] .player-btn-main:active,
+[data-gpu-mode="eco"] .player-inline-icon-btn:active,
+[data-gpu-mode="eco"] .catalog-song-card:hover,
+[data-gpu-mode="eco"] .catalog-song-card:active,
+[data-gpu-mode="eco"] .catalog-song-card:hover .catalog-card-cover,
+[data-gpu-mode="eco"] .discover-recent-card:hover,
+[data-gpu-mode="eco"] .discover-recent-card:active,
+[data-gpu-mode="eco"] .discover-recent-card:hover .discover-recent-cover,
+[data-gpu-mode="eco"] .playlist-card-item:hover,
+html[data-game-mode="true"] .btn:hover,
+html[data-game-mode="true"] .btn:active,
+html[data-game-mode="true"] .player-btn:hover,
+html[data-game-mode="true"] .player-btn:active,
+html[data-game-mode="true"] .player-btn-main:hover,
+html[data-game-mode="true"] .player-btn-main:active,
+html[data-game-mode="true"] .player-inline-icon-btn:active,
+html[data-game-mode="true"] .catalog-song-card:hover,
+html[data-game-mode="true"] .catalog-song-card:active,
+html[data-game-mode="true"] .catalog-song-card:hover .catalog-card-cover,
+html[data-game-mode="true"] .discover-recent-card:hover,
+html[data-game-mode="true"] .discover-recent-card:active,
+html[data-game-mode="true"] .discover-recent-card:hover .discover-recent-cover,
+html[data-game-mode="true"] .playlist-card-item:hover {
+  transform: none !important;
+}
+html[data-game-mode="true"] .ambient-cover-field {
+  display: none !important;
+}
+html[data-game-mode="true"] .stage-cover-frame.is-playing,
+html[data-game-mode="true"] .audio-player-bar,
+html[data-game-mode="true"] .sliding-drawer {
+  box-shadow: none !important;
+}
+
+/* Zero-blur instant view switch: never promote full view subtrees onto GPU opacity layers */
+.view-panel.active > * {
+  animation: none;
+  opacity: 1;
+}
+
+/* 3-bar pure-CSS equalizer indicator on active track rows */
+.playing-eq-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  height: 12px;
+  width: 14px;
+  flex-shrink: 0;
+}
+
+.playing-eq-bars span {
+  width: 2.5px;
+  height: 100%;
+  border-radius: 1px;
+  background-color: var(--accent);
+  transform-origin: bottom center;
+  animation: eqPulse 0.9s ease-in-out infinite;
+}
+
+.playing-eq-bars span:nth-child(2) {
+  animation-delay: -0.3s;
+}
+
+.playing-eq-bars span:nth-child(3) {
+  animation-delay: -0.6s;
+}
+
+.playing-eq-bars.is-paused span,
+[data-gpu-mode="eco"] .playing-eq-bars span,
+html[data-game-mode="true"] .playing-eq-bars span {
+  animation: none !important;
+  transform: scaleY(0.55);
+}
+
+.playing-eq-bars.is-paused span:nth-child(2),
+[data-gpu-mode="eco"] .playing-eq-bars span:nth-child(2),
+html[data-game-mode="true"] .playing-eq-bars span:nth-child(2) {
+  transform: scaleY(0.88);
+}
+
+.playing-eq-bars.is-paused span:nth-child(3),
+[data-gpu-mode="eco"] .playing-eq-bars span:nth-child(3),
+html[data-game-mode="true"] .playing-eq-bars span:nth-child(3) {
+  transform: scaleY(0.42);
+}
+
+@keyframes eqPulse {
+  0%, 100% { transform: scaleY(0.32); }
+  50% { transform: scaleY(0.98); }
+}
+
+.player-time, [class*="bitrate"], [class*="countdown"], .queue-count, .count-badge { font-variant-numeric: tabular-nums; }
+
+@media (min-width: 1440px) {
+  :root { --rail-width: 244px; }
+}
+
+@media (min-width: 1920px) {
+  :root { --rail-width: 260px; }
 }

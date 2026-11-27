@@ -4,7 +4,8 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .venv/
-build/
+/build/*
+!/build/Pruner-Studio.exe.manifest
 dist/
 *.spec
 !Pruner-Studio.spec
@@ -18,6 +19,9 @@ catalog.json
 operations.json
 pending-operations.json
 session.corrupt-*.json
+sessions.json
+sessions.corrupt-*.json
+channel_credentials*.json
 rules.local.json
 rules.json
 backup-*.json
@@ -34,3 +38,14 @@ Thumbs.db
 .agy-tasks/
 .runtime-acceptance/
 .runtime-visual-acceptance/
+backups/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+.instance.json
+
+/android/.gradle/
+/android/.kotlin/
+/android/build/
+/android/app/build/
+/android/local.properties

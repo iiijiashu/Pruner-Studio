@@ -17,7 +17,7 @@ class OperationJournal:
 
     FILE_NAME = "pending-operations.json"
     VERSION = 1
-    ACTIONS = {"unlike", "remove_tracks", "create_playlist", "add_tracks"}
+    ACTIONS = {"like", "unlike", "remove_tracks", "create_playlist", "add_tracks"}
     ACTIVE_STATES = {"prepared", "sent_unknown"}
     STATES = ACTIVE_STATES | {"ignored"}
 
@@ -224,6 +224,26 @@ class OperationJournal:
             if changed:
                 document["operations"] = retained
                 self._save(document)
+
+    def active_unrejected_keys(self, user_id: int, keys: list[str]) -> tuple[set[str], list[str]]:
+        """Return keys currently in active journal entries without explicit upstream rejection."""
+        scope = self.account_scope(user_id)
+        key_set = set(keys)
+        matched_keys: set[str] = set()
+        op_ids: list[str] = []
+        with self._lock:
+            operations = self._load()["operations"]
+            for entry in operations:
+                if entry["account_scope"] != scope or entry["state"] not in self.ACTIVE_STATES:
+                    continue
+                last_error = entry.get("last_error")
+                if isinstance(last_error, dict) and last_error.get("code") == "UPSTREAM_REJECTED":
+                    continue
+                overlap = key_set.intersection(entry["keys"])
+                if overlap:
+                    matched_keys.update(overlap)
+                    op_ids.append(entry["operation_id"])
+        return matched_keys, op_ids
 
     def ignore(self, user_id: int, operation_id: str) -> dict[str, Any]:
         scope = self.account_scope(user_id)

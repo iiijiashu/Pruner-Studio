@@ -21,6 +21,10 @@ function checkFile(filePath) {
   const content = fs.readFileSync(filePath, 'utf8');
   const lines = content.split('\n');
   lines.forEach((line, idx) => {
+    if (/\.innerHTML\s*(?:\+?=)|\.insertAdjacentHTML\s*\(/.test(line)) {
+      console.error(`[UNSAFE_HTML] ${filePath}:${idx + 1}`);
+      errors++;
+    }
     if (emojiRegex.test(line)) {
       console.error(`[EMOJI] Found in ${filePath}:${idx + 1} -> ${line.trim()}`);
       errors++;
@@ -69,8 +73,92 @@ for (const controlId of requiredDeckControls) {
   }
 }
 
+// Visual Acceptance Contract (VAC-01..VAC-08) static guardrails
+const readCss = (name) => fs.readFileSync(path.join('web', 'css', name), 'utf8');
+const cssFiles = fs.readdirSync(path.join('web', 'css')).filter((f) => f.endsWith('.css'));
+
+// VAC-01 & VAC-08: Zero backdrop-filter and zero 10px/11px font sizes across all web/css/*.css
+for (const file of cssFiles) {
+  const text = readCss(file);
+  if (/backdrop-filter\s*:/i.test(text)) {
+    console.error(`[VAC-01_GLASSMORPHISM] Forbidden backdrop-filter in web/css/${file}`);
+    errors++;
+  }
+  if (/font-size:\s*(?:10|11)px\b/i.test(text)) {
+    console.error(`[VAC-08_MICRO_FONT] Forbidden 10px/11px font-size in web/css/${file}`);
+    errors++;
+  }
+}
+
+// VAC-01 & VAC-08: Opaque chrome tokens (--bg-header, --bg-rail, --bg-player) & lowercase hexes in base.css
+const baseCss = readCss('base.css');
+const chromeRgba = baseCss.match(/--bg-(?:header|rail|player):\s*rgba\([^)]+\)/gi);
+if (chromeRgba) {
+  console.error(`[VAC-01_OPAQUE_CHROME] Translucent chrome token forbidden in base.css -> ${chromeRgba.join(', ')}`);
+  errors++;
+}
+const uppercaseHex = baseCss.match(/#[0-9a-fA-F]{6}\b/g)?.filter((h) => h !== h.toLowerCase()) || [];
+if (uppercaseHex.length > 0) {
+  console.error(`[VAC-08_HEX_CASE] Uppercase hex colors forbidden in base.css -> ${uppercaseHex.join(', ')}`);
+  errors++;
+}
+
+// VAC-02: Recessed hairline .header-search-trigger (must not use --border-control)
+const componentsCss = readCss('components.css');
+const searchTriggerBlock = componentsCss.match(/\.header-search-trigger\s*\{([^}]*)\}/)?.[1] || '';
+if (/--border-control/.test(searchTriggerBlock) || !/--bg-well/.test(searchTriggerBlock)) {
+  console.error('[VAC-02_SEARCH_TRIGGER] .header-search-trigger must use recessed --bg-well and hairline border (not --border-control)');
+  errors++;
+}
+
+// VAC-05: Scrollbarless Dusty Gems carousel + stepper buttons
+const discoverCss = readCss('discover.css');
+if (!/\.discover-dusty-strip\s*\{[^}]*scrollbar-width:\s*none/s.test(discoverCss)
+  || !/\.discover-dusty-strip::-webkit-scrollbar\s*\{\s*display:\s*none;\s*\}/.test(discoverCss)) {
+  console.error('[VAC-05_CAROUSEL] .discover-dusty-strip must hide native scrollbars cleanly');
+  errors++;
+}
+if (!indexHtml.includes('id="discover-dusty-prev"') || !indexHtml.includes('id="discover-dusty-next"')) {
+  console.error('[VAC-05_STEPPERS] #discover-dusty-prev and #discover-dusty-next must exist in web/index.html');
+  errors++;
+}
+
+// VAC-06: Rebalanced player bar height & non-overlapping inline queue pill
+const comfortablePlayerH = Number(baseCss.match(/:root\s*\{[\s\S]*?--player-height:\s*(\d+)px/)?.[1] || 0);
+const compactPlayerH = Number(baseCss.match(/html\[data-density="compact"\]\s*\{[\s\S]*?--player-height:\s*(\d+)px/)?.[1] || 0);
+if (comfortablePlayerH < 82 || compactPlayerH < 72) {
+  console.error(`[VAC-06_PLAYER_HEIGHT] --player-height must be >=82px comfortable (${comfortablePlayerH}) and >=72px compact (${compactPlayerH})`);
+  errors++;
+}
+const playerCss = readCss('player.css');
+if (!/\.queue-count-dot\s*\{[^}]*position:\s*static/s.test(playerCss)) {
+  console.error('[VAC-06_QUEUE_BADGE] .queue-count-dot must use inline position: static (zero overlap with queue SVG)');
+  errors++;
+}
+
+// VAC-07: Hero parity, recessed settings-block without shadow, zero orphan top borders
+const fmCardBlock = discoverCss.match(/\.discover-fm-card\s*\{([^}]*)\}/)?.[1] || '';
+if (/box-shadow:\s*none/i.test(fmCardBlock)) {
+  console.error('[VAC-07_HERO_PARITY] .discover-fm-card must not disable box-shadow (must match .discover-action-card)');
+  errors++;
+}
+const cloudCss = readCss('cloud.css');
+const settingsBlock = cloudCss.match(/\.settings-block\s*\{([^}]*)\}/)?.[1] || '';
+if (!/box-shadow:\s*none/i.test(settingsBlock) || !/--bg-well/.test(settingsBlock)) {
+  console.error('[VAC-07_NESTED_SHADOW] .settings-block must use recessed --bg-well and box-shadow: none');
+  errors++;
+}
+const catalogCss = readCss('catalog.css');
+const searchCss = readCss('search.css');
+const catalogNavBlock = catalogCss.match(/\.catalog-section-nav\s*\{([^}]*)\}/)?.[1] || '';
+const searchHeaderBlock = searchCss.match(/\.search-view-header-card\s*\{([^}]*)\}/)?.[1] || '';
+if (!/border-top:\s*none/i.test(catalogNavBlock) || !/border-top:\s*none/i.test(searchHeaderBlock)) {
+  console.error('[VAC-07_ORPHAN_BORDER] First child of #view-catalog and #view-search must have border-top: none');
+  errors++;
+}
+
 if (errors === 0) {
-  console.log('✓ UI Scan Passed: Zero emojis, zero forbidden English nav labels, and all required deck controls found in web/**.');
+  console.log('✓ UI Scan Passed: Zero emojis, zero forbidden English nav labels, all required deck controls, and VAC-01..VAC-08 static invariants verified.');
   process.exit(0);
 } else {
   console.error(`❌ UI Scan Failed: Found ${errors} violation(s).`);
