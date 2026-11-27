@@ -34,6 +34,14 @@
   background-image: var(--surface-sheen);
 }
 
+.discover-card-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 22px;
+}
+
 .discover-card-kicker {
   display: inline-flex;
   align-items: center;
@@ -42,6 +50,97 @@
   font-weight: 600;
   color: var(--text-ash);
   letter-spacing: 0.08em;
+}
+
+.discover-radio-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: var(--radius-control);
+  background-color: var(--bg-well);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-ash);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.discover-radio-status-pill[data-state="playing"],
+.discover-radio-status-pill[data-state="tuned"] {
+  background-color: var(--radio-amber-subtle);
+  border-color: rgba(196, 122, 31, 0.34);
+  color: var(--radio-amber-text);
+}
+
+.discover-radio-status-pill[data-state="paused"],
+.discover-radio-status-pill[data-state="loading"] {
+  border-color: var(--border-medium);
+  color: var(--text-bone);
+}
+
+.radio-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.discover-radio-status-pill[data-state="playing"] .radio-status-dot {
+  display: none;
+}
+
+.discover-radio-status-pill[data-state="paused"] .radio-status-dot,
+.discover-radio-status-pill[data-state="tuned"] .radio-status-dot,
+.discover-radio-status-pill[data-state="loading"] .radio-status-dot {
+  background-color: var(--radio-amber);
+}
+
+.radio-live-eq {
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 1.5px;
+  height: 10px;
+  width: 11px;
+  flex-shrink: 0;
+}
+
+.discover-radio-status-pill[data-state="playing"] .radio-live-eq {
+  display: inline-flex;
+}
+
+.radio-live-eq span {
+  width: 2.5px;
+  height: 100%;
+  border-radius: 1px;
+  background-color: var(--radio-amber);
+  transform-origin: bottom center;
+  animation: radioEqPulse 0.85s ease-in-out infinite;
+}
+
+.radio-live-eq span:nth-child(2) {
+  animation-delay: -0.28s;
+}
+
+.radio-live-eq span:nth-child(3) {
+  animation-delay: -0.56s;
+}
+
+@keyframes radioEqPulse {
+  0%, 100% { transform: scaleY(0.32); }
+  50% { transform: scaleY(0.98); }
+}
+
+.discover-action-card[data-orb-paused="true"] .radio-live-eq span,
+[data-gpu-mode="eco"] .radio-live-eq span,
+html[data-game-mode="true"] .radio-live-eq span {
+  animation: none !important;
+  transform: scaleY(0.6);
 }
 
 .discover-fm-body {
@@ -53,7 +152,7 @@
 }
 
 .discover-fm-cover {
-  width: clamp(112px, 9.5vw, 152px);
+  width: clamp(112px, 9.2vw, 138px);
   height: auto;
   border-radius: var(--radius-control);
   object-fit: cover;
@@ -125,236 +224,328 @@
   padding: 12px 0;
 }
 
-.discover-action-title {
-  font-size: var(--text-base);
-  font-weight: 700;
-  color: var(--text-bone);
-}
-
+/* Smart Radio Body: Vinyl Sleeve + Real Album Cover Stage + Editorial Tuner Column */
 .discover-radio-body {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: 12px;
   min-width: 0;
   flex: 1;
 }
 
-/* Braun / Dieter Rams Analog Radio Tuner Dial Stage */
-.discover-orb-stage {
+.discover-radio-stage {
+  --sleeve-size: clamp(102px, 7.8vw, 122px);
   position: relative;
-  width: clamp(120px, 10vw, 152px);
-  aspect-ratio: 1;
+  width: calc(var(--sleeve-size) + 30px);
+  height: var(--sleeve-size);
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
+  padding: 0;
+  border: none;
   background: transparent;
   cursor: pointer;
+  display: block;
+  text-align: left;
+  color: inherit;
   user-select: none;
-  touch-action: none;
-  outline: none;
 }
 
-.discover-orb-stage:focus-visible {
-  box-shadow: 0 0 0 2px var(--tuner-needle);
+.discover-vinyl-stack {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  width: calc(var(--sleeve-size) - 6px);
+  height: calc(var(--sleeve-size) - 8px);
+  border-radius: var(--radius-control);
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-medium);
+  background-size: cover;
+  background-position: center;
+  pointer-events: none;
+  transition: transform 260ms var(--ease-out-quart), opacity 220ms ease;
 }
 
-.discover-tuner-dial {
+.discover-vinyl-stack-2 {
+  z-index: 0;
+  transform: translate(-5px, -3px) rotate(-4.5deg);
+  opacity: 0.68;
+}
+
+.discover-vinyl-stack-1 {
+  z-index: 1;
+  transform: translate(-2px, -1px) rotate(-2deg);
+  opacity: 0.86;
+}
+
+.discover-radio-stage[data-radio-playing="true"] .discover-vinyl-stack-2,
+.discover-radio-stage[data-radio-playing="true"] .discover-vinyl-stack-1 {
+  transform: translate(0, 0) rotate(0deg);
+  opacity: 0.24;
+}
+
+.discover-vinyl-disc-wrap {
+  position: absolute;
+  top: 3px;
+  left: 20px;
+  width: calc(var(--sleeve-size) - 6px);
+  height: calc(var(--sleeve-size) - 6px);
+  z-index: 2;
+  pointer-events: none;
+  transition: transform 280ms var(--ease-out-quart);
+}
+
+.discover-radio-stage:hover .discover-vinyl-disc-wrap {
+  transform: translateX(5px);
+}
+
+.discover-radio-stage[data-radio-playing="true"] .discover-vinyl-disc-wrap {
+  transform: translateX(10px);
+}
+
+.discover-vinyl-disc {
   width: 100%;
   height: 100%;
   display: block;
-  overflow: visible;
+  border-radius: 50%;
+  box-shadow: var(--radio-vinyl-shadow, 0 3px 10px rgba(0, 0, 0, 0.24));
 }
 
-.discover-tuner-face {
-  stroke: var(--tuner-bezel);
-  stroke-width: 1.25;
-  transition: stroke var(--transition-fast);
+.vinyl-disc-body {
+  fill: var(--radio-vinyl-body);
+  stroke: var(--radio-vinyl-rim);
+  stroke-width: 1.85;
 }
 
-.discover-orb-stage:hover .discover-tuner-face {
-  stroke: var(--tuner-needle);
-}
-
-.discover-tuner-inner-ring {
+.vinyl-disc-groove {
   fill: none;
-  stroke: var(--tuner-inner-ring);
-  stroke-width: 0.75;
+  stroke: var(--radio-vinyl-groove, rgba(255, 255, 255, 0.14));
+  stroke-width: 0.9;
 }
 
-.discover-tuner-track {
+.vinyl-disc-sheen {
+  fill: var(--radio-vinyl-sheen, rgba(255, 255, 255, 0.09));
+}
+
+.vinyl-disc-label {
+  fill: var(--radio-vinyl-label);
+}
+
+.vinyl-disc-label-ring {
   fill: none;
-  stroke: var(--tuner-inner-ring);
-  stroke-width: 2.25;
-  stroke-linecap: round;
+  stroke: rgba(255, 255, 255, 0.32);
+  stroke-width: 0.85;
 }
 
-.discover-tuner-arc {
-  fill: none;
-  stroke: var(--tuner-needle);
-  stroke-width: 2.5;
-  stroke-linecap: round;
-  transition: stroke-dashoffset 140ms var(--ease-out-quart);
-}
-
-.discover-tuner-tick {
-  stroke: var(--tuner-tick-minor);
-  stroke-linecap: round;
-}
-
-.discover-tuner-tick.is-major {
-  stroke: var(--tuner-tick-major);
-}
-
-.discover-tuner-tick.is-active {
-  stroke: var(--tuner-needle);
-}
-
-.discover-tuner-scale-label {
-  fill: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 7.5px;
-  font-weight: 600;
-  text-anchor: middle;
-  dominant-baseline: central;
-}
-
-.discover-tuner-needle-group {
-  transition: transform 150ms var(--ease-out-quart);
-  transform-origin: 80px 80px;
-}
-
-.discover-orb-stage.is-dragging .discover-tuner-needle-group,
-.discover-orb-stage.is-dragging .discover-tuner-arc {
-  transition: none;
-}
-
-.discover-tuner-needle-main {
-  fill: var(--tuner-needle);
-}
-
-.discover-tuner-needle-tail {
-  fill: var(--tuner-tick-major);
-  opacity: 0.72;
-}
-
-.discover-tuner-hub {
-  fill: var(--tuner-hub-bg);
-  stroke: var(--tuner-hub-ring);
-  stroke-width: 1.25;
-}
-
-.discover-tuner-led {
-  fill: var(--tuner-tick-minor);
-  transition: fill var(--transition-fast);
-}
-
-.discover-tuner-dial[data-radio-playing="true"] .discover-tuner-led {
-  fill: var(--tuner-needle);
-}
-
-.discover-tuner-plate {
-  fill: var(--tuner-plate-bg);
-  stroke: var(--tuner-plate-border);
+.vinyl-disc-spindle {
+  fill: var(--bg-surface);
+  stroke: rgba(0, 0, 0, 0.4);
   stroke-width: 1;
 }
 
-.discover-tuner-readout {
-  fill: var(--tuner-plate-text);
-  font-family: var(--font-mono);
-  font-size: 8.5px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-anchor: middle;
-  dominant-baseline: central;
+.discover-radio-stage[data-radio-playing="true"]:not([data-orb-paused="true"]) .discover-vinyl-disc {
+  animation: radioVinylSpin 16s linear infinite;
 }
 
-.discover-tuner-eq-bar {
-  fill: var(--tuner-tick-minor);
-  transform-box: fill-box;
-  transform-origin: center bottom;
+@keyframes radioVinylSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
-.discover-tuner-dial[data-radio-playing="true"]:not([data-orb-paused="true"]) .discover-tuner-eq-bar {
-  fill: var(--tuner-needle);
-  animation: tunerMeterPulse 1.15s ease-in-out infinite;
-}
-
-.discover-tuner-dial[data-radio-playing="true"]:not([data-orb-paused="true"]) .discover-tuner-eq-bar:nth-child(2) {
-  animation-delay: -0.22s;
-}
-
-.discover-tuner-dial[data-radio-playing="true"]:not([data-orb-paused="true"]) .discover-tuner-eq-bar:nth-child(3) {
-  animation-delay: -0.48s;
-}
-
-.discover-tuner-dial[data-radio-playing="true"]:not([data-orb-paused="true"]) .discover-tuner-eq-bar:nth-child(4) {
-  animation-delay: -0.71s;
-}
-
-.discover-tuner-dial[data-radio-playing="true"]:not([data-orb-paused="true"]) .discover-tuner-eq-bar:nth-child(5) {
-  animation-delay: -0.35s;
-}
-
-@keyframes tunerMeterPulse {
-  0%, 100% { transform: scaleY(0.38); }
-  50% { transform: scaleY(1); }
-}
-
-[data-gpu-mode="eco"] .discover-tuner-eq-bar,
-html[data-game-mode="true"] .discover-tuner-eq-bar {
+[data-gpu-mode="eco"] .discover-vinyl-disc,
+html[data-game-mode="true"] .discover-vinyl-disc,
+.discover-radio-stage[data-orb-paused="true"] .discover-vinyl-disc {
   animation: none !important;
+}
+
+.discover-vinyl-sleeve {
+  position: relative;
+  z-index: 3;
+  display: block;
+  width: var(--sleeve-size);
+  height: var(--sleeve-size);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  background-color: var(--bg-well);
+  border: 1px solid var(--border-medium);
+  box-shadow: var(--shadow-md);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.discover-radio-stage:hover .discover-vinyl-sleeve {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.discover-radio-cover-host {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.discover-radio-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.discover-radio-cover-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(145deg, var(--bg-well), var(--bg-elevated));
+  color: var(--radio-amber);
+}
+
+.discover-vinyl-cue {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(20, 18, 16, 0.36);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  pointer-events: none;
+}
+
+.discover-vinyl-cue > span {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background-color: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+}
+
+.discover-radio-stage:hover .discover-vinyl-cue,
+.discover-radio-stage:focus-visible .discover-vinyl-cue {
+  opacity: 1;
 }
 
 .discover-radio-controls-col {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
   flex: 1;
   border-inline-start: 1px solid var(--border-medium);
-  padding-inline-start: var(--space-4);
+  padding-inline-start: 14px;
 }
 
-.discover-action-desc {
-  font-size: var(--text-xs);
-  color: var(--text-ash);
-  line-height: 1.45;
-  flex: 1;
-}
-
-.discover-action-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-/* Smart Radio Explore Slider (0% 熟歌 <-> 100% 新声探索) */
-.discover-explore-control {
+.discover-radio-headline-block {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
-  background-color: var(--bg-well);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-control);
+  gap: 3px;
+  min-width: 0;
 }
 
-.discover-explore-header {
+.discover-radio-headline {
+  font-size: var(--text-base);
+  font-weight: 700;
+  color: var(--text-bone);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.discover-radio-headline.is-clickable {
+  cursor: pointer;
+}
+
+.discover-radio-headline.is-clickable:hover {
+  color: var(--radio-amber-text);
+}
+
+.discover-radio-subline-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 0.78rem;
+  min-width: 0;
+}
+
+.discover-radio-subline {
+  font-size: var(--text-xs);
   color: var(--text-ash);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.discover-radio-queue-link {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--radio-amber-text);
+  background: transparent;
+  border: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background-color var(--transition-fast);
+}
+
+.discover-radio-queue-link:hover {
+  background-color: var(--radio-amber-subtle);
+}
+
+/* Hairline Two-Tone Visual Blend Bar (Familiar vs Explore) */
+.discover-blend-bar {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  height: 4px;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  background-color: var(--bg-track);
+  gap: 2px;
+}
+
+.discover-blend-familiar {
+  height: 100%;
+  background-color: var(--radio-familiar);
+  transition: width 140ms var(--ease-out-quart);
+}
+
+.discover-blend-explore {
+  height: 100%;
+  background-color: var(--radio-amber);
+  transition: width 140ms var(--ease-out-quart);
+}
+
+/* Integrated Precision Tuner Rail (Zero boxed form, single monospace readout, 4 preset stops) */
+.discover-tuner-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.discover-tuner-rail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.75rem;
+}
+
+.discover-tuner-rail-title {
+  color: var(--text-muted);
+  font-weight: 500;
 }
 
 .discover-explore-value {
-  color: var(--accent-text, var(--accent));
-  font-weight: 600;
+  color: var(--radio-amber-text);
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -363,24 +554,13 @@ html[data-game-mode="true"] .discover-tuner-eq-bar {
   --fill: 40%;
   width: 100%;
   height: 4px;
-  margin: 6px 0 4px;
+  margin: 2px 0;
   border-radius: var(--radius-full);
   appearance: none;
   -webkit-appearance: none;
-  background: linear-gradient(to right, var(--accent) var(--fill), var(--bg-track) var(--fill));
+  background: linear-gradient(to right, var(--radio-amber) var(--fill), var(--bg-track) var(--fill));
   outline: none;
   cursor: pointer;
-}
-
-.discover-explore-ticks {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
 }
 
 .discover-explore-slider::-webkit-slider-thumb {
@@ -389,7 +569,7 @@ html[data-game-mode="true"] .discover-tuner-eq-bar {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--radio-amber);
   border: 2px solid var(--bg-surface);
   box-shadow: var(--shadow-sm);
   cursor: pointer;
@@ -405,7 +585,7 @@ html[data-game-mode="true"] .discover-tuner-eq-bar {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--radio-amber);
   border: 2px solid var(--bg-surface);
   box-shadow: var(--shadow-sm);
   cursor: pointer;
@@ -417,16 +597,95 @@ html[data-game-mode="true"] .discover-tuner-eq-bar {
   transform: scale(1.15);
 }
 
-.discover-radio-tags {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
+.discover-tuner-presets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
 }
 
-.discover-radio-tag {
+.discover-tuner-preset {
+  padding: 3px 4px;
   font-size: 0.75rem;
-  padding: 1px 6px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-subtle);
+  background-color: transparent;
+  color: var(--text-ash);
+  cursor: pointer;
+  white-space: nowrap;
+  text-align: center;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.discover-tuner-preset:hover {
+  background-color: var(--bg-well);
+  border-color: var(--border-medium);
+  color: var(--text-bone);
+}
+
+.discover-tuner-preset.is-active {
+  background-color: var(--radio-amber-subtle);
+  border-color: var(--radio-amber);
+  color: var(--radio-amber-text);
+  font-weight: 600;
+}
+
+.discover-action-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.discover-radio-btn-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
+.discover-radio-btn-group .btn-sm {
+  padding: 4px 8px;
+  gap: 4px;
+  font-size: 0.75rem;
+}
+
+.discover-radio-live-feedback {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 3px 2px 6px;
+  border-radius: var(--radius-control);
+  background-color: var(--radio-amber-subtle);
+  border: 1px solid rgba(196, 122, 31, 0.3);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.discover-radio-live-feedback[hidden] {
+  display: none !important;
+}
+
+.discover-radio-live-note {
+  color: var(--radio-amber-text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.discover-radio-try-next {
+  padding: 2px 4px;
+  font-size: 0.75rem;
+  color: var(--radio-amber-text);
+  font-weight: 600;
+}
+
+.discover-radio-try-next:hover:not(:disabled) {
+  background-color: var(--bg-surface);
+  color: var(--text-bone);
 }
 
 /* Compact Local Listening Insights Bar (Interactive Tactile Blocks) */
@@ -583,115 +842,138 @@ html[data-game-mode="true"] .discover-tuner-eq-bar {
   box-shadow: inset 0 2px 0 var(--tuner-needle, var(--accent));
 }
 
+/* Dusty Gems 2-Row 8-Card Showcase Grid */
+.discover-dusty-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.discover-dusty-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  min-width: 0;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  box-shadow: var(--rim-top), var(--shadow-card);
+  cursor: pointer;
+  transition: transform 180ms var(--ease-spring), border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.discover-dusty-card:hover {
+  border-color: var(--border-medium);
+  background-color: var(--bg-elevated);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.discover-dusty-card:active {
+  transform: translateY(0);
+  background-color: var(--bg-active);
+  box-shadow: var(--shadow-press);
+}
+
+.discover-dusty-card.is-playing-row {
+  border-color: var(--accent);
+  background-color: var(--accent-subtle);
+}
+
+.discover-dusty-cover-wrap {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  flex-shrink: 0;
+  background-color: var(--bg-well);
+  border: 1px solid var(--border-subtle);
+}
+
+.discover-dusty-cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.discover-dusty-play-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(20, 18, 16, 0.56);
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  pointer-events: none;
+}
+
+.discover-dusty-card:hover .discover-dusty-play-overlay,
+.discover-dusty-card:focus-visible .discover-dusty-play-overlay {
+  opacity: 1;
+}
+
+.discover-dusty-meta {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.discover-dusty-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-bone);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-inline-end: 22px;
+}
+
+.discover-dusty-card.is-playing-row .discover-dusty-title {
+  color: var(--accent-text, var(--accent));
+}
+
+.discover-dusty-artist {
+  font-size: var(--text-xs);
+  color: var(--text-ash);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .discover-dusty-reason {
   font-size: 0.75rem;
-  color: var(--accent-text, var(--accent));
+  font-weight: 500;
+  color: var(--radio-amber-text, var(--accent-warning));
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Dusty Gems Scrollbarless Tactile Carousel + Steppers (up to 12 full-width cards) */
-.discover-dusty-stepper-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+@media (max-width: 1180px) {
+  .discover-dusty-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
-.discover-dusty-stepper {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border-radius: var(--radius-control);
-  background-color: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-ash);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+@media (max-width: 760px) {
+  .discover-dusty-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
-.discover-dusty-stepper:hover:not(:disabled) {
-  background-color: var(--bg-elevated);
-  border-color: var(--border-medium);
-  color: var(--text-bone);
-}
-
-.discover-dusty-stepper:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.discover-dusty-carousel {
-  position: relative;
-  min-width: 0;
-}
-
-.discover-dusty-carousel::before,
-.discover-dusty-carousel::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 32px;
-  pointer-events: none;
-  z-index: 2;
-  opacity: 0;
-  transition: opacity var(--transition-fast);
-}
-
-.discover-dusty-carousel::before {
-  left: 0;
-  background: linear-gradient(to right, var(--bg-app), transparent);
-}
-
-.discover-dusty-carousel::after {
-  right: 0;
-  background: linear-gradient(to left, var(--bg-app), transparent);
-}
-
-.discover-dusty-carousel[data-can-scroll-left="true"]::before,
-.discover-dusty-carousel[data-can-scroll-right="true"]::after {
-  opacity: 1;
-}
-
-.discover-dusty-strip {
-  display: flex;
-  align-items: stretch;
-  gap: 10px;
-  overflow-x: auto;
-  padding: 2px 0 4px;
-  scroll-snap-type: x proximity;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.discover-dusty-strip::-webkit-scrollbar {
-  display: none;
-}
-
-.discover-dusty-strip .discover-dusty-card {
-  flex: 0 0 240px;
-  padding: 10px;
-  background-color: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  box-shadow: var(--shadow-card);
-  scroll-snap-align: start;
-}
-
-.discover-dusty-strip .discover-dusty-card .discover-recent-cover {
-  width: 46px;
-  height: 46px;
-  border-radius: 5px;
-  border: 1px solid var(--border-subtle);
-}
-
-.discover-dusty-strip .discover-recent-empty {
-  flex: 1 0 100%;
+@media (max-width: 520px) {
+  .discover-dusty-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Section Card */
@@ -988,12 +1270,15 @@ html[data-density="compact"] .discover-track-row {
   text-align: center;
 }
 
-@media (max-width: 780px) {
+@media (max-width: 1020px) {
   .discover-hero-grid {
     grid-template-columns: 1fr;
   }
-  .discover-orb-stage {
-    width: 96px;
+}
+
+@media (max-width: 780px) {
+  .discover-radio-stage {
+    --sleeve-size: 96px;
   }
   .discover-track-duration {
     display: none;
@@ -1003,7 +1288,6 @@ html[data-density="compact"] .discover-track-row {
 #discover-extra:empty { display: none; }
 #discover-extra { max-height: 15rem; overflow-y: auto; }
 
-.discover-dusty-card { position: relative; }
 .discover-dusty-card > .quick-next {
   position: absolute;
   top: var(--space-2);
@@ -1015,6 +1299,12 @@ html[data-density="compact"] .discover-track-row {
 .discover-dusty-card:hover > .quick-next,
 .discover-dusty-card:focus-within > .quick-next {
   opacity: 1;
+}
+[data-gpu-mode="eco"] .discover-dusty-card:hover,
+[data-gpu-mode="eco"] .discover-dusty-card:active,
+html[data-game-mode="true"] .discover-dusty-card:hover,
+html[data-game-mode="true"] .discover-dusty-card:active {
+  transform: none !important;
 }
 
 .discover-insight-pill + .discover-insight-pill { border-inline-start: 1px solid var(--border-subtle); }

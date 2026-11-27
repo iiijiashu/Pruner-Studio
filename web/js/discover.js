@@ -1,9 +1,9 @@
 /**
  * Pruner Studio - Discover & Native/Local-First Recommendations (发现)
  * Default online landing featuring:
- * - 2-Column Listening Hero: Personal FM (私人漫游) + True Heartbeat Smart Radio (心动电台 with 20%-80% explore slider)
- * - Compact Local Listening Insights bar (本地听歌洞察 via GET /api/insights)
- * - Dusty Gems strip (沉睡宝藏 via GET /api/recommend/dusty-gems)
+ * - 2-Column Listening Hero: Personal FM (私人漫游) + Smart Radio (心动电台: Vinyl Sleeve & Real Album Cover Stage + Unified Precision Tuner + Live Tuning)
+ * - Interactive Local Listening Insights bar (本地听歌洞察 via GET /api/insights)
+ * - Dusty Gems 2-row 8-card Showcase (沉睡宝藏 via GET /api/recommend/dusty-gems + dedicated #view-dusty explorer)
  * - Daily Recommend (每日推荐 30 tracks) with Play All & explicit "不再推荐"
  * - Recent Played (最近播放)
  */
@@ -14,6 +14,36 @@ import { toast } from './toast.js';
 import { getTrackKey, createElement, formatArtists, formatDuration, formatSeconds, getSizedCoverUrl, createPlayingEqBars, syncPlayingRowIndicators } from './utils.js';
 import { createIcon } from './icons.js';
 import { openSongContextMenu, quickNextButton } from './context_menu.js';
+
+const RADIO_PRESET_STOPS = [0, 30, 55, 85];
+const DUSTY_SHOWCASE_LIMIT = 8;
+
+function formatCount(n) {
+  const num = Number(n);
+  if (!Number.isFinite(num) || num <= 0) return '0';
+  return Math.round(num).toLocaleString('en-US');
+}
+
+function getActiveRadioPreset(pct) {
+  for (const stop of RADIO_PRESET_STOPS) {
+    if (Math.abs(pct - stop) <= 2) return stop;
+  }
+  return null;
+}
+
+function updateActionButton(btn, iconName, labelText) {
+  if (!btn) return;
+  const label = btn.querySelector?.('.btn-label');
+  if (typeof document !== 'undefined' && typeof document.createElementNS === 'function') {
+    btn.textContent = '';
+    btn.appendChild(createIcon(iconName, { size: 14 }));
+    const span = createElement('span', { className: 'btn-label', text: labelText });
+    btn.appendChild(span);
+    return;
+  }
+  if (label) label.textContent = labelText;
+  else btn.textContent = labelText;
+}
 
 class DiscoverManager {
   constructor() {
@@ -26,12 +56,21 @@ class DiscoverManager {
     this.smartRadioBreakdown = null;
     this.onAddToPlaylistCallback = null;
     this.exploreSaveTimer = null;
+    this.liveTuneTimer = null;
+    this.liveTuneNoticeTimer = null;
+    this.liveTunePending = false;
+    this.liveTuneFeedbackVisible = false;
+    this.liveTuneRecentNotice = false;
     this.settingsWrite = Promise.resolve();
     this.epoch = 0;
     this.dustySeen = new Map();
+    this.dustyBatchHistory = [];
+    this.dustyForwardHistory = [];
+    this.dustyTotal = 0;
+    this.dustyExhausted = false;
     this.exploreSeen = new Map();
 
-    // Braun / Dieter Rams Analog Radio Tuner Dial state (pure SVG, zero canvas GPU burn)
+    // Vinyl Sleeve Stage motion lifecycle state (pauses cleanly in eco/game/hidden/blur)
     this.orbCanvas = null;
     this.orbCurrentRatio = 0.4;
     this.orbTargetRatio = 0.4;
@@ -39,8 +78,7 @@ class DiscoverManager {
     this.orbWindowBlurred = false;
     this.orbMotionQuery = null;
     this.orbObserver = null;
-    this.tunerTickElements = [];
-    this.dustySpotlightTimer = null;
+    this._lastRadioStageKey = '';
   }
 
   init(containerId, { onAddToPlaylist } = {}) {
@@ -51,9 +89,24 @@ class DiscoverManager {
     this.bindSmartRadioControls();
     for (const key of ['isPlaying', 'personalFmQueue']) state.on('change:' + key, () => {
       this.renderFmCard();
+      this.renderHeroCards();
       this.syncTunerPlayingState();
+      if (state.get('activeTab') === 'discover') {
+        const dustyGrid = typeof document !== 'undefined' ? document.getElementById('discover-dusty-grid') : null;
+        if (dustyGrid) syncPlayingRowIndicators(state.get('currentPlayingSong'), Boolean(state.get('isPlaying')), dustyGrid);
+      }
     });
     state.on('change:radioExhausted', () => this.renderHeroCards());
+    state.on('change:radioBreakdown', (bd) => {
+      if (bd) this.smartRadioBreakdown = bd;
+      this.renderHeroCards();
+    });
+    state.on('change:smartRadioSongs', () => this.renderHeroCards());
+    state.on('change:playQueue', () => {
+      if (state.get('playMode') === 'smart_radio' && state.get('activeTab') === 'discover') {
+        this.renderHeroCards();
+      }
+    });
     state.on('change:settings', () => {
       const toggle = typeof document !== 'undefined' ? document.getElementById('settings-fm-sync') : null;
       if (toggle) toggle.checked = Boolean(state.get('settings')?.sync_fm_trash_to_netease);
@@ -88,13 +141,37 @@ class DiscoverManager {
     });
 
     state.on('change:currentPlayingSong', () => {
+      if (this.liveTuneFeedbackVisible || this.liveTuneRecentNotice) {
+        this.liveTuneFeedbackVisible = false;
+        this.liveTuneRecentNotice = false;
+        if (this.liveTuneNoticeTimer) {
+          clearTimeout(this.liveTuneNoticeTimer);
+          this.liveTuneNoticeTimer = null;
+        }
+      }
       if (state.get('activeTab') === 'discover') {
         this.renderFmCard();
+        this.renderHeroCards();
         this.syncTunerPlayingState();
+        const dustyGrid = typeof document !== 'undefined' ? document.getElementById('discover-dusty-grid') : null;
+        if (dustyGrid) syncPlayingRowIndicators(state.get('currentPlayingSong'), Boolean(state.get('isPlaying')), dustyGrid);
       }
     });
 
     state.on('change:playMode', () => {
+      if (state.get('playMode') !== 'smart_radio') {
+        this.liveTunePending = false;
+        this.liveTuneFeedbackVisible = false;
+        this.liveTuneRecentNotice = false;
+        if (this.liveTuneTimer) {
+          clearTimeout(this.liveTuneTimer);
+          this.liveTuneTimer = null;
+        }
+        if (this.liveTuneNoticeTimer) {
+          clearTimeout(this.liveTuneNoticeTimer);
+          this.liveTuneNoticeTimer = null;
+        }
+      }
       if (state.get('activeTab') === 'discover') {
         this.renderFmCard();
         this.renderHeroCards();
@@ -115,9 +192,33 @@ class DiscoverManager {
 
   bindSmartRadioControls() {
     if (typeof document === 'undefined') return;
+    if (!(this._boundRadioNodes instanceof WeakMap)) {
+      this._boundRadioNodes = new WeakMap();
+    }
+    const bindOnce = (el, eventName, handler, options) => {
+      if (!el || typeof el.addEventListener !== 'function') return;
+      const key = `${eventName}`;
+      let seen = this._boundRadioNodes.get(el);
+      if (!seen) {
+        seen = new Set();
+        this._boundRadioNodes.set(el, seen);
+      }
+      if (seen.has(key)) return;
+      seen.add(key);
+      el.addEventListener(eventName, handler, options);
+    };
+
     const slider = document.getElementById('discover-explore-slider');
+    const rail = document.getElementById('discover-tuner-rail');
+    const stageBtn = document.getElementById('discover-radio-stage');
+    const headlineEl = document.getElementById('discover-radio-headline');
+    const nextBtn = document.getElementById('discover-radio-next-btn');
+    const tryNextBtn = document.getElementById('discover-radio-try-next-btn');
+    const queueBtn = document.getElementById('discover-radio-queue-btn');
     const playAllDustyBtn = document.getElementById('discover-dusty-play-all');
+    const prevDustyBtn = document.getElementById('discover-dusty-prev');
     const refreshDustyBtn = document.getElementById('discover-dusty-refresh');
+    const viewAllDustyBtn = document.getElementById('discover-dusty-view-all');
 
     const parseSliderPct = (rawVal) => {
       const parsed = Number(rawVal);
@@ -138,95 +239,106 @@ class DiscoverManager {
           this.settingsWrite = this.settingsWrite.then(() => api.saveSettings({ smart_radio_explore_ratio: ratio }))
             .then(res => { if (!res.ok) toast.warning('探索度保存失败', res.error?.message); }).catch(() => {});
         }, 300);
+
+        if (state.get('playMode') === 'smart_radio' && !state.get('radioExhausted')) {
+          if (this.liveTuneTimer) clearTimeout(this.liveTuneTimer);
+          this.liveTuneFeedbackVisible = false;
+          this.liveTuneRecentNotice = false;
+          this.liveTuneTimer = setTimeout(() => {
+            this.liveTuneTimer = null;
+            this.triggerLiveRadioRearrange();
+          }, 450);
+        }
       }
     };
     this._applyExplorePct = applyExplorePct;
 
-    if (slider) {
-      slider.addEventListener('input', (e) => applyExplorePct(e.target.value, { commit: false }));
-      slider.addEventListener('change', (e) => applyExplorePct(e.target.value, { commit: true }));
-    }
+    bindOnce(slider, 'input', (e) => applyExplorePct(e.target.value, { commit: false }));
+    bindOnce(slider, 'change', (e) => applyExplorePct(e.target.value, { commit: true }));
 
-    if (playAllDustyBtn) {
-      playAllDustyBtn.addEventListener('click', () => {
-        const gems = state.get('dustyGems') || [];
-        if (gems.length > 0) {
-          player.playQueue(gems, 0, 'shuffle', '发现 · 沉睡宝藏');
-        }
+    bindOnce(rail, 'wheel', (e) => {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      const rawRatio = state.get('settings')?.smart_radio_explore_ratio;
+      const cur = Math.round((Number.isFinite(Number(rawRatio)) ? Number(rawRatio) : 0.4) * 100);
+      const step = Number(e.deltaY) < 0 ? 5 : -5;
+      applyExplorePct(cur + step, { commit: true });
+    }, { passive: false });
+
+    const presets = document.querySelectorAll?.('.discover-tuner-preset') || [];
+    presets.forEach((btn) => {
+      bindOnce(btn, 'click', () => {
+        const val = Number(btn.dataset?.radioPreset);
+        if (Number.isFinite(val)) applyExplorePct(val, { commit: true });
       });
-    }
+    });
 
-    if (refreshDustyBtn) {
-      refreshDustyBtn.addEventListener('click', () => {
-        this.loadDustyGems();
-        this.loadListeningInsights();
-      });
-    }
+    bindOnce(stageBtn, 'click', () => this.handleSmartRadioPrimaryAction());
+    bindOnce(headlineEl, 'click', () => {
+      if (state.get('playMode') === 'smart_radio' && state.get('currentPlayingSong')) {
+        player.togglePlay();
+      }
+    });
+    bindOnce(nextBtn, 'click', () => {
+      this.liveTuneFeedbackVisible = false;
+      this.liveTuneRecentNotice = false;
+      player.playNext(true);
+    });
+    bindOnce(tryNextBtn, 'click', () => {
+      this.liveTuneFeedbackVisible = false;
+      this.liveTuneRecentNotice = false;
+      this.renderHeroCards();
+      player.playNext(true);
+    });
+    bindOnce(queueBtn, 'click', () => {
+      document.getElementById('player-queue-btn')?.click?.();
+    });
 
-    this.bindDustyCarouselControls();
+    bindOnce(playAllDustyBtn, 'click', () => {
+      const gems = state.get('dustyGems') || [];
+      if (gems.length > 0) {
+        player.playQueue(gems, 0, 'shuffle', '发现 · 沉睡宝藏');
+      }
+    });
+    bindOnce(prevDustyBtn, 'click', () => this.showPrevDustyBatch());
+    bindOnce(refreshDustyBtn, 'click', () => {
+      this.showNextDustyBatch();
+      this.loadListeningInsights();
+    });
+    bindOnce(viewAllDustyBtn, 'click', () => {
+      this._dispatchTabNavigation({ tab: 'dusty' });
+    });
+
     this.syncExploreSliderUI();
   }
 
-  bindDustyCarouselControls() {
-    if (typeof document === 'undefined') return;
-    if (!this._boundDustyNodes) this._boundDustyNodes = new WeakSet();
-    const strip = document.getElementById('discover-dusty-grid');
-    const prevBtn = document.getElementById('discover-dusty-prev');
-    const nextBtn = document.getElementById('discover-dusty-next');
-    if (!strip && !prevBtn && !nextBtn) return;
-
-    const scrollStep = (dir) => {
-      const target = document.getElementById('discover-dusty-grid');
-      if (!target) return;
-      const firstCard = target.querySelector?.('.discover-dusty-card');
-      const cardWidth = Number(firstCard?.offsetWidth) || 240;
-      const delta = dir * (cardWidth * 2 + 20);
-      if (typeof target.scrollBy === 'function') {
-        target.scrollBy({ left: delta, behavior: 'smooth' });
-      } else {
-        target.scrollLeft = Math.max(0, (Number(target.scrollLeft) || 0) + delta);
+  async triggerLiveRadioRearrange() {
+    if (state.get('playMode') !== 'smart_radio' || state.get('radioExhausted')) return false;
+    const epoch = this.epoch;
+    this.liveTunePending = true;
+    this.renderHeroCards();
+    let ok = false;
+    try {
+      const result = await player.requestRadio('rearrange', false);
+      if (epoch !== this.epoch) return false;
+      ok = result !== false;
+      if (ok && state.get('playMode') === 'smart_radio') {
+        this.smartRadioBreakdown = state.get('radioBreakdown') || this.smartRadioBreakdown;
+        this.liveTuneFeedbackVisible = true;
+        this.liveTuneRecentNotice = true;
+        if (this.liveTuneNoticeTimer) clearTimeout(this.liveTuneNoticeTimer);
+        this.liveTuneNoticeTimer = setTimeout(() => {
+          this.liveTuneRecentNotice = false;
+          this.liveTuneNoticeTimer = null;
+          this.renderHeroCards();
+        }, 10000);
       }
-      this.syncDustyCarouselState();
-    };
-
-    if (prevBtn && !this._boundDustyNodes.has(prevBtn)) {
-      this._boundDustyNodes.add(prevBtn);
-      prevBtn.addEventListener?.('click', () => scrollStep(-1));
+    } finally {
+      if (epoch === this.epoch) {
+        this.liveTunePending = false;
+        this.renderHeroCards();
+      }
     }
-    if (nextBtn && !this._boundDustyNodes.has(nextBtn)) {
-      this._boundDustyNodes.add(nextBtn);
-      nextBtn.addEventListener?.('click', () => scrollStep(1));
-    }
-    if (strip && !this._boundDustyNodes.has(strip)) {
-      this._boundDustyNodes.add(strip);
-      strip.addEventListener?.('scroll', () => this.syncDustyCarouselState(), { passive: true });
-    }
-    if (!this._dustyResizeBound && typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-      this._dustyResizeBound = true;
-      window.addEventListener('resize', () => this.syncDustyCarouselState(), { passive: true });
-    }
-    this.syncDustyCarouselState();
-  }
-
-  syncDustyCarouselState() {
-    if (typeof document === 'undefined') return;
-    const strip = document.getElementById('discover-dusty-grid');
-    const carousel = document.getElementById('discover-dusty-carousel');
-    const prevBtn = document.getElementById('discover-dusty-prev');
-    const nextBtn = document.getElementById('discover-dusty-next');
-    if (!strip) return;
-    const scrollLeft = Number(strip.scrollLeft) || 0;
-    const scrollWidth = Number(strip.scrollWidth) || 0;
-    const clientWidth = Number(strip.clientWidth) || 0;
-    const maxScroll = Math.max(0, scrollWidth - clientWidth);
-    const canLeft = scrollLeft > 2;
-    const canRight = maxScroll > 2 && scrollLeft < maxScroll - 2;
-    if (carousel?.dataset) {
-      carousel.dataset.canScrollLeft = String(canLeft);
-      carousel.dataset.canScrollRight = String(canRight);
-    }
-    if (prevBtn) prevBtn.disabled = !canLeft;
-    if (nextBtn) nextBtn.disabled = !canRight;
+    return ok;
   }
 
   shouldShowRecommendReason(reason) {
@@ -244,6 +356,43 @@ class DiscoverManager {
     return '100% · 纯新歌探索';
   }
 
+  formatSmartRadioReadout(pct) {
+    const clamped = Math.max(0, Math.min(100, Math.round(Number.isFinite(Number(pct)) ? Number(pct) : 40)));
+    if (clamped === 0) return '0% 纯熟歌';
+    if (clamped === 100) return '100% 纯新声';
+    return `${clamped}% 新声`;
+  }
+
+  formatSmartRadioMood(pct) {
+    const clamped = Math.max(0, Math.min(100, Math.round(Number.isFinite(Number(pct)) ? Number(pct) : 40)));
+    const familiarPct = 100 - clamped;
+    if (clamped === 0) {
+      return { title: '纯粹回味 · 唤醒曲库深处', sub: '100% 来自你的曲库熟歌与沉睡宝藏' };
+    }
+    if (clamped <= 34) {
+      return { title: '偏爱熟歌 · 熟面孔里藏惊喜', sub: `约 ${familiarPct}% 曲库熟歌 · ${clamped}% 风格新声` };
+    }
+    if (clamped <= 65) {
+      return { title: '熟新均衡 · 经典与新声交织', sub: `约 ${familiarPct}% 曲库熟歌 · ${clamped}% 风格新声` };
+    }
+    if (clamped <= 99) {
+      return { title: '探索新声 · 顺着品味向外漫游', sub: `约 ${familiarPct}% 曲库熟歌 · ${clamped}% 风格新声` };
+    }
+    return { title: '纯新声漫游 · 推开未知声场', sub: '100% 基于你品味的相似与探索新声' };
+  }
+
+  formatSmartRadioBreakdownSummary(bd) {
+    if (!bd || typeof bd !== 'object') return '';
+    const similarCount = bd.multi_seed_similar ?? bd.similar_graph ?? 0;
+    const parts = [
+      bd.dusty_gems ? `沉睡宝藏 ${bd.dusty_gems}` : '',
+      bd.fresh_rotation ? `近期心头好 ${bd.fresh_rotation}` : '',
+      similarCount ? `共同相似 ${similarCount}` : '',
+      bd.exploration ? `探索发现 ${bd.exploration}` : '',
+    ].filter(Boolean);
+    return parts.length ? `本轮构成：${parts.join(' · ')}` : '';
+  }
+
   computeSliderFillPercent(pct, slider = null) {
     const rawMin = slider?.min !== undefined && slider?.min !== '' ? Number(slider.min) : 0;
     const rawMax = slider?.max !== undefined && slider?.max !== '' ? Number(slider.max) : 100;
@@ -259,25 +408,60 @@ class DiscoverManager {
     const rawRatio = state.get('settings')?.smart_radio_explore_ratio;
     const ratio = Number.isFinite(Number(rawRatio)) ? Number(rawRatio) : 0.4;
     const pct = Math.max(0, Math.min(100, Math.round(ratio * 100)));
+    const familiarPct = 100 - pct;
     const slider = document.getElementById('discover-explore-slider');
     const label = document.getElementById('discover-explore-ratio-label');
+    const familiarSeg = document.getElementById('discover-blend-familiar');
+    const exploreSeg = document.getElementById('discover-blend-explore');
+    const blendBar = document.getElementById('discover-radio-blend-bar');
     this.orbTargetRatio = pct / 100;
     this.orbCurrentRatio = pct / 100;
+
     if (slider) {
       slider.value = String(pct);
       slider.style?.setProperty?.('--fill', this.computeSliderFillPercent(pct, slider));
     }
-    if (label) label.textContent = this.formatExploreLabel(pct);
-    this.renderAcousticOrbFrame(pct);
+    if (label) {
+      label.textContent = this.formatSmartRadioReadout(pct);
+      label.setAttribute?.('title', this.formatExploreLabel(pct));
+    }
+    if (familiarSeg?.style) familiarSeg.style.width = `${familiarPct}%`;
+    if (exploreSeg?.style) exploreSeg.style.width = `${pct}%`;
+
+    if (blendBar) {
+      const breakdownSummary = this.formatSmartRadioBreakdownSummary(this.smartRadioBreakdown);
+      const baseSummary = `熟歌 ${familiarPct}% / 新声 ${pct}%`;
+      blendBar.setAttribute?.('title', breakdownSummary ? `${baseSummary} · ${breakdownSummary}` : baseSummary);
+      if (blendBar.dataset) {
+        blendBar.dataset.breakdownSummary = breakdownSummary;
+      }
+    }
+
+    const activePreset = getActiveRadioPreset(pct);
+    const presets = document.querySelectorAll?.('.discover-tuner-preset') || [];
+    presets.forEach((btn) => {
+      const presetVal = Number(btn.dataset?.radioPreset);
+      const isActive = presetVal === activePreset;
+      btn.classList?.toggle('is-active', isActive);
+      btn.setAttribute?.('aria-pressed', String(isActive));
+    });
+
+    // Update idle headline/subline live while scrubbing
+    const isSmartActive = state.get('playMode') === 'smart_radio' && Boolean(state.get('currentPlayingSong'));
+    if (!isSmartActive) {
+      const mood = this.formatSmartRadioMood(pct);
+      const headline = document.getElementById('discover-radio-headline');
+      const subline = document.getElementById('discover-radio-subline');
+      if (headline) headline.textContent = mood.title;
+      if (subline) subline.textContent = mood.sub;
+    }
   }
 
   initAcousticOrb() {
     if (typeof document === 'undefined') return;
-    const dial = document.getElementById('discover-acoustic-orb');
-    if (!dial) return;
-    this.orbCanvas = dial;
-    this.buildTunerTicks();
-    this.bindTunerDialInteraction();
+    const stage = document.getElementById('discover-radio-stage');
+    if (!stage) return;
+    this.orbCanvas = stage;
 
     this.orbWindowBlurred = document.hasFocus?.() === false;
     this.orbMotionQuery = typeof window !== 'undefined' ? window.matchMedia?.('(prefers-reduced-motion: reduce)') : null;
@@ -302,119 +486,15 @@ class DiscoverManager {
         this.orbInView = Boolean(entry?.isIntersecting);
         this.syncOrbLifecycle();
       }, { threshold: 0.05 });
-      this.orbObserver.observe(dial);
+      this.orbObserver.observe(stage);
     }
 
     const rawRatio = state.get('settings')?.smart_radio_explore_ratio;
     const ratio = Number.isFinite(Number(rawRatio)) ? Math.max(0, Math.min(1, Number(rawRatio))) : 0.4;
     this.orbCurrentRatio = ratio;
     this.orbTargetRatio = ratio;
-    this.renderAcousticOrbFrame(Math.round(ratio * 100));
     this.syncOrbLifecycle();
     this.syncTunerPlayingState();
-  }
-
-  buildTunerTicks() {
-    if (typeof document === 'undefined' || typeof document.createElementNS !== 'function') return;
-    const group = document.getElementById('discover-tuner-ticks');
-    if (!group || group.childNodes?.length > 0) return;
-    const svgNs = 'http://www.w3.org/2000/svg';
-    const totalTicks = 40; // 0..40 => every 2.5% along the 270 deg analog sweep
-    const ticks = [];
-    for (let i = 0; i <= totalTicks; i++) {
-      const frac = i / totalTicks;
-      const deg = -135 + frac * 270;
-      const rad = ((deg - 90) * Math.PI) / 180;
-      const isMajor = i % 10 === 0;
-      const isMedium = !isMajor && i % 4 === 0;
-      const rOuter = 67;
-      const rInner = isMajor ? 59 : isMedium ? 61.5 : 63.5;
-      const x1 = (80 + Math.cos(rad) * rInner).toFixed(2);
-      const y1 = (80 + Math.sin(rad) * rInner).toFixed(2);
-      const x2 = (80 + Math.cos(rad) * rOuter).toFixed(2);
-      const y2 = (80 + Math.sin(rad) * rOuter).toFixed(2);
-      const line = document.createElementNS(svgNs, 'line');
-      line.setAttribute('x1', x1);
-      line.setAttribute('y1', y1);
-      line.setAttribute('x2', x2);
-      line.setAttribute('y2', y2);
-      line.setAttribute('stroke-width', isMajor ? '1.6' : isMedium ? '1.15' : '0.85');
-      line.setAttribute('class', isMajor ? 'discover-tuner-tick is-major' : 'discover-tuner-tick');
-      line.dataset.tickPct = String(Math.round(frac * 100));
-      group.appendChild(line);
-      ticks.push({ el: line, pct: Math.round(frac * 100) });
-    }
-    this.tunerTickElements = ticks;
-  }
-
-  bindTunerDialInteraction() {
-    if (typeof document === 'undefined') return;
-    const stage = document.getElementById('discover-tuner-stage');
-    if (!stage || this._tunerDialBound) return;
-    this._tunerDialBound = true;
-
-    const pctFromPointer = (clientX, clientY) => {
-      const rect = stage.getBoundingClientRect?.();
-      if (!rect || !rect.width || !rect.height) return null;
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      let deg = (Math.atan2(clientY - cy, clientX - cx) * 180) / Math.PI + 90;
-      if (deg > 180) deg -= 360;
-      if (deg < -135) deg = -135;
-      if (deg > 135) deg = 135;
-      return Math.max(0, Math.min(100, Math.round(((deg + 135) / 270) * 100)));
-    };
-
-    let dragging = false;
-    let lastPct = null;
-
-    stage.addEventListener?.('pointerdown', (e) => {
-      if (e.button !== undefined && e.button !== 0) return;
-      dragging = true;
-      stage.classList?.add('is-dragging');
-      stage.setPointerCapture?.(e.pointerId);
-      const pct = pctFromPointer(e.clientX, e.clientY);
-      if (pct !== null) {
-        lastPct = pct;
-        this._applyExplorePct?.(pct, { commit: false });
-      }
-    });
-
-    stage.addEventListener?.('pointermove', (e) => {
-      if (!dragging) return;
-      const pct = pctFromPointer(e.clientX, e.clientY);
-      if (pct !== null && pct !== lastPct) {
-        lastPct = pct;
-        this._applyExplorePct?.(pct, { commit: false });
-      }
-    });
-
-    const endDrag = () => {
-      if (!dragging) return;
-      dragging = false;
-      stage.classList?.remove('is-dragging');
-      if (lastPct !== null) {
-        this._applyExplorePct?.(lastPct, { commit: true });
-        toast.quiet(`心动电台频段已调至 FM · ${lastPct}%`);
-      }
-      lastPct = null;
-    };
-
-    stage.addEventListener?.('pointerup', endDrag);
-    stage.addEventListener?.('pointercancel', endDrag);
-
-    stage.addEventListener?.('keydown', (e) => {
-      const cur = Math.round((Number(state.get('settings')?.smart_radio_explore_ratio) || 0.4) * 100);
-      if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        const next = Math.min(100, cur + 5);
-        this._applyExplorePct?.(next, { commit: true });
-      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
-        e.preventDefault();
-        const next = Math.max(0, cur - 5);
-        this._applyExplorePct?.(next, { commit: true });
-      }
-    });
   }
 
   shouldPauseOrb() {
@@ -432,57 +512,25 @@ class DiscoverManager {
   }
 
   syncOrbLifecycle() {
-    if (!this.orbCanvas) return;
+    if (typeof document === 'undefined') return;
+    const stage = this.orbCanvas || document.getElementById('discover-radio-stage');
     const paused = this.shouldPauseOrb();
-    if (this.orbCanvas.dataset) {
-      this.orbCanvas.dataset.orbPaused = String(paused);
+    if (stage?.dataset) {
+      stage.dataset.orbPaused = String(paused);
+    }
+    const card = stage?.closest?.('.discover-action-card');
+    if (card?.dataset) {
+      card.dataset.orbPaused = String(paused);
     }
     this.syncTunerPlayingState();
   }
 
   syncTunerPlayingState() {
     if (typeof document === 'undefined') return;
-    const dial = this.orbCanvas || document.getElementById('discover-acoustic-orb');
-    if (!dial || !dial.dataset) return;
+    const stage = this.orbCanvas || document.getElementById('discover-radio-stage');
+    if (!stage || !stage.dataset) return;
     const isSmartPlaying = state.get('playMode') === 'smart_radio' && Boolean(state.get('isPlaying'));
-    dial.dataset.radioPlaying = String(isSmartPlaying);
-  }
-
-  renderAcousticOrbFrame(overridePct = null) {
-    if (typeof document === 'undefined') return;
-    const pct = overridePct !== null && Number.isFinite(Number(overridePct))
-      ? Math.max(0, Math.min(100, Math.round(Number(overridePct))))
-      : Math.max(0, Math.min(100, Math.round(this.orbCurrentRatio * 100)));
-    const ratio = pct / 100;
-    const deg = -135 + ratio * 270;
-    const arcLen = 259.18;
-    const dashOffset = (arcLen * (1 - ratio)).toFixed(2);
-
-    const stage = document.getElementById('discover-tuner-stage');
-    stage?.setAttribute?.('aria-valuenow', String(pct));
-
-    const needle = document.getElementById('discover-tuner-needle');
-    if (needle) {
-      needle.setAttribute?.('transform', `rotate(${deg.toFixed(1)} 80 80)`);
-      if (needle.style) needle.style.transform = `rotate(${deg.toFixed(1)}deg)`;
-    }
-
-    const arc = document.getElementById('discover-tuner-arc');
-    if (arc) {
-      arc.setAttribute?.('stroke-dashoffset', dashOffset);
-    }
-
-    const readout = document.getElementById('discover-tuner-value');
-    if (readout) {
-      readout.textContent = `FM · ${pct}%`;
-    }
-
-    if (Array.isArray(this.tunerTickElements) && this.tunerTickElements.length > 0) {
-      for (const tick of this.tunerTickElements) {
-        tick.el?.classList?.toggle('is-active', tick.pct <= pct);
-      }
-    }
-    this.syncTunerPlayingState();
+    stage.dataset.radioPlaying = String(isSmartPlaying);
   }
 
   async ensureLoaded(force = false) {
@@ -491,7 +539,7 @@ class DiscoverManager {
     if (isOffline) {
       await Promise.allSettled([
         this.loadDailyRecommend(),
-        this.loadDustyGems(),
+        this.loadDustyGems({ recordHistory: false }),
         this.loadListeningInsights(),
       ]);
       this.render();
@@ -506,7 +554,7 @@ class DiscoverManager {
     await Promise.allSettled([
       this.loadDailyRecommend(),
       this.loadFmPreview(),
-      this.loadDustyGems(),
+      this.loadDustyGems({ recordHistory: false }),
       this.loadListeningInsights(),
     ]);
     this.render();
@@ -522,30 +570,104 @@ class DiscoverManager {
       }
     } catch {}
     this.renderInsightsBar();
+    this.syncDustyShowcaseHeader();
   }
 
-  async loadDustyGems() {
+  async loadDustyGems({ recordHistory = false } = {}) {
     if (this.loadingDustyGems) return;
     this.loadingDustyGems = true;
     const epoch = this.epoch;
+    const previousBatch = recordHistory ? [...(state.get('dustyGems') || [])] : [];
     try {
       if (this.dustyExhausted) this.dustySeen.clear();
-      const res = await api.getDustyGems({limit: 12, excludeKeys: [...this.dustySeen.keys()],
-        excludeIds: [...this.dustySeen.values()].filter(Number.isSafeInteger)});
+      const res = await api.getDustyGems({
+        limit: DUSTY_SHOWCASE_LIMIT,
+        excludeKeys: [...this.dustySeen.keys()],
+        excludeIds: [...this.dustySeen.values()].filter(Number.isSafeInteger),
+      });
       if (epoch !== this.epoch) return;
       if (res.ok && res.data) {
         const songs = Array.isArray(res.data.songs) ? res.data.songs : [];
+        if (recordHistory && previousBatch.length > 0 && songs.length > 0) {
+          this.dustyBatchHistory.push(previousBatch);
+          if (this.dustyBatchHistory.length > 20) this.dustyBatchHistory.shift();
+          this.dustyForwardHistory = [];
+        }
         songs.forEach(song => this.dustySeen.set(getTrackKey(song), Number(song.id) || null));
         this.dustyExhausted = !!res.data.exhausted;
+        const reportedTotal = Number(res.data.total_candidates ?? res.data.counts?.all);
+        if (Number.isFinite(reportedTotal) && reportedTotal > 0) {
+          this.dustyTotal = reportedTotal;
+        }
         state.set({ dustyGems: songs });
-        const btn = globalThis.document?.getElementById('discover-dusty-refresh');
-        const btnLabel = btn?.querySelector?.('.btn-label');
-        const nextLabel = this.dustyExhausted ? '已看完 · 再看一轮' : '换一批';
-        if (btnLabel) btnLabel.textContent = nextLabel;
-        else if (btn) btn.textContent = nextLabel;
       }
     } catch {} finally {
-      if (this.epoch === epoch) { this.loadingDustyGems = false; this.renderDustyGems(); }
+      if (this.epoch === epoch) {
+        this.loadingDustyGems = false;
+        this.renderDustyGems();
+        this.renderHeroCards();
+      }
+    }
+  }
+
+  showPrevDustyBatch() {
+    if (!this.dustyBatchHistory.length) return false;
+    const current = state.get('dustyGems') || [];
+    const prev = this.dustyBatchHistory.pop();
+    if (current.length > 0) {
+      this.dustyForwardHistory.push([...current]);
+    }
+    state.set({ dustyGems: prev });
+    this.renderDustyGems();
+    return true;
+  }
+
+  showNextDustyBatch() {
+    if (this.dustyForwardHistory.length > 0) {
+      const current = state.get('dustyGems') || [];
+      const next = this.dustyForwardHistory.pop();
+      if (current.length > 0) {
+        this.dustyBatchHistory.push([...current]);
+      }
+      state.set({ dustyGems: next });
+      this.renderDustyGems();
+      return Promise.resolve(true);
+    }
+    return this.loadDustyGems({ recordHistory: true });
+  }
+
+  syncDustyShowcaseHeader() {
+    if (typeof document === 'undefined') return;
+    const insightsCount = Number(state.get('listeningInsights')?.dusty_gems_count) || 0;
+    const gemsCount = (state.get('dustyGems') || []).length;
+    const total = Math.max(this.dustyTotal || 0, insightsCount, gemsCount);
+
+    const subtitle = document.getElementById('discover-dusty-subtitle');
+    if (subtitle) {
+      subtitle.textContent = total > 0
+        ? `共 ${formatCount(total)} 首长期未听 · 唤醒曲库里被遗忘的好歌`
+        : '唤醒曲库中超过 30 天未听或从未听过的好歌';
+    }
+
+    const prevBtn = document.getElementById('discover-dusty-prev');
+    if (prevBtn) {
+      prevBtn.disabled = this.dustyBatchHistory.length === 0;
+    }
+
+    const refreshBtn = document.getElementById('discover-dusty-refresh');
+    if (refreshBtn) {
+      const label = refreshBtn.querySelector?.('.btn-label');
+      const nextLabel = this.dustyForwardHistory.length === 0 && this.dustyExhausted ? '再看一轮' : '换一批';
+      if (label) label.textContent = nextLabel;
+      else refreshBtn.textContent = nextLabel;
+    }
+
+    const viewAllBtn = document.getElementById('discover-dusty-view-all');
+    if (viewAllBtn) {
+      const label = viewAllBtn.querySelector?.('.btn-label');
+      const nextText = total > 0 ? `查看全部 ${formatCount(total)} 首` : '查看全部';
+      if (label) label.textContent = nextText;
+      else viewAllBtn.textContent = nextText;
     }
   }
 
@@ -568,7 +690,11 @@ class DiscoverManager {
       if (forceCheck) toast.info('检查更新', reason || (data.changed
         ? `新增或变化 ${(data.added_count || 0) + removed} 首` : '今日歌单暂无更新（每日 06:00 更新）'));
     } finally {
-      if (epoch === this.epoch) { this.loadingDaily = false; this.renderDailyList(); }
+      if (epoch === this.epoch) {
+        this.loadingDaily = false;
+        this.renderDailyList();
+        this.renderHeroCards();
+      }
     }
   }
 
@@ -600,19 +726,35 @@ class DiscoverManager {
   resetDiscovery() {
     this.epoch++;
     this.panelToken = null;
+    if (this.exploreSaveTimer) {
+      clearTimeout(this.exploreSaveTimer);
+      this.exploreSaveTimer = null;
+    }
+    if (this.liveTuneTimer) {
+      clearTimeout(this.liveTuneTimer);
+      this.liveTuneTimer = null;
+    }
+    if (this.liveTuneNoticeTimer) {
+      clearTimeout(this.liveTuneNoticeTimer);
+      this.liveTuneNoticeTimer = null;
+    }
+    this.liveTunePending = false;
+    this.liveTuneFeedbackVisible = false;
+    this.liveTuneRecentNotice = false;
     globalThis.document?.getElementById('discover-extra')?.replaceChildren();
-    const dustyButton = globalThis.document?.getElementById('discover-dusty-refresh');
-    const dustyLabel = dustyButton?.querySelector?.('.btn-label');
-    if (dustyLabel) dustyLabel.textContent = '换一批';
-    else if (dustyButton) dustyButton.textContent = '换一批';
     this.dustySeen.clear();
+    this.dustyBatchHistory = [];
+    this.dustyForwardHistory = [];
+    this.dustyTotal = 0;
     this.exploreSeen.clear();
     this.dustyExhausted = false;
+    this._lastRadioStageKey = '';
     this.loadedForUserId = this.smartRadioBreakdown = null;
     this.loadingDaily = this.loadingFm = this.loadingDustyGems = this.loadingSmartRadio = false;
     player.resetRadioSession();
     state.set({ dailyRecommend: [], dailyRecommendMeta: null, personalFmQueue: [], smartRadioSongs: [],
       dustyGems: [], listeningInsights: null, radioBreakdown: null });
+    this.syncDustyShowcaseHeader();
   }
 
   async saveFmSync(toggle) {
@@ -675,24 +817,49 @@ class DiscoverManager {
   }
 
   /**
-   * Start a session or replace only its upcoming tracks.
+   * Start a Smart Radio session or replace its upcoming tracks.
    */
   async startSmartRadio() {
     if (this.loadingSmartRadio) return;
     const epoch = this.epoch;
     const replay = Boolean(state.get('radioExhausted'));
     this.loadingSmartRadio = true;
+    this.liveTuneFeedbackVisible = false;
+    this.liveTuneRecentNotice = false;
     this.renderHeroCards();
     try {
       await player.requestRadio(state.get('playMode') === 'smart_radio' && !replay ? 'rearrange' : 'start', replay);
       this.smartRadioBreakdown = state.get('radioBreakdown');
     } finally {
-      if (epoch === this.epoch) { this.loadingSmartRadio = false; this.renderHeroCards(); }
+      if (epoch === this.epoch) {
+        this.loadingSmartRadio = false;
+        this.renderHeroCards();
+      }
     }
   }
 
-  async startHeartbeatMode() {
+  /**
+   * Intuitive primary Smart Radio control:
+   * - Idle -> Start Smart Radio
+   * - Active & Playing -> Pause (player.togglePlay)
+   * - Active & Paused -> Resume (player.togglePlay)
+   * - Exhausted -> Start fresh replay round
+   */
+  async handleSmartRadioPrimaryAction() {
+    if (this.loadingSmartRadio) return;
+    if (state.get('radioExhausted')) {
+      return this.startSmartRadio();
+    }
+    if (state.get('playMode') === 'smart_radio' && state.get('currentPlayingSong')) {
+      player.togglePlay();
+      this.renderHeroCards();
+      return;
+    }
     return this.startSmartRadio();
+  }
+
+  async startHeartbeatMode() {
+    return this.handleSmartRadioPrimaryAction();
   }
 
   async markNotInterested(song, context = 'daily_recommend') {
@@ -735,37 +902,200 @@ class DiscoverManager {
     this.renderRecentPlayed();
   }
 
+  resolveSmartRadioStageCovers() {
+    const isSmartActive = state.get('playMode') === 'smart_radio' && Boolean(state.get('currentPlayingSong'));
+    const activeSong = isSmartActive ? state.get('currentPlayingSong') : null;
+    const pool = [
+      ...(state.get('smartRadioSongs') || []),
+      ...(state.get('dustyGems') || []),
+      ...(state.get('dailyRecommend') || []),
+      ...(state.get('catalog') || []).slice(0, 24),
+    ];
+
+    const seen = new Set();
+    const covers = [];
+    if (activeSong?.cover_url) {
+      const url = String(activeSong.cover_url).trim();
+      if (url) {
+        seen.add(url);
+        covers.push({ url, title: activeSong.title || '心动电台' });
+      }
+    }
+    for (const song of pool) {
+      const url = String(song?.cover_url || '').trim();
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      covers.push({ url, title: song?.title || '心动电台' });
+      if (covers.length >= 3) break;
+    }
+
+    return {
+      primary: covers[0] || null,
+      peeks: [covers[1]?.url || '', covers[2]?.url || ''],
+    };
+  }
+
+  renderRadioCoverStage() {
+    if (typeof document === 'undefined') return;
+    const stage = document.getElementById('discover-radio-stage');
+    const coverHost = document.getElementById('discover-radio-cover-host');
+    const cueIcon = document.getElementById('discover-radio-stage-cue-icon');
+    const isSmartActive = state.get('playMode') === 'smart_radio' && Boolean(state.get('currentPlayingSong'));
+    const isSmartPlaying = isSmartActive && Boolean(state.get('isPlaying'));
+
+    if (stage) {
+      if (stage.dataset) {
+        stage.dataset.radioPlaying = String(isSmartPlaying);
+      }
+      stage.setAttribute?.('aria-label', isSmartPlaying ? '暂停心动电台' : (isSmartActive ? '继续心动电台' : '开启心动电台'));
+      stage.setAttribute?.('title', isSmartPlaying ? '点击暂停心动电台' : (isSmartActive ? '点击继续心动电台' : '点击开启心动电台'));
+    }
+
+    if (cueIcon && typeof document.createElementNS === 'function') {
+      const desiredIcon = isSmartPlaying ? 'pause' : 'play';
+      if (cueIcon.dataset?.activeIcon !== desiredIcon) {
+        cueIcon.textContent = '';
+        cueIcon.appendChild(createIcon(desiredIcon, { size: 14 }));
+        if (cueIcon.dataset) cueIcon.dataset.activeIcon = desiredIcon;
+      }
+    }
+
+    const { primary, peeks } = this.resolveSmartRadioStageCovers();
+    const stageKey = `${primary?.url || 'fallback'}|${peeks[0]}|${peeks[1]}`;
+    if (stageKey === this._lastRadioStageKey && coverHost?.children?.length > 0) {
+      return;
+    }
+    this._lastRadioStageKey = stageKey;
+
+    if (stage && typeof stage.querySelector === 'function') {
+      const stack1 = stage.querySelector('.discover-vinyl-stack-1');
+      const stack2 = stage.querySelector('.discover-vinyl-stack-2');
+      if (stack1?.style) {
+        stack1.style.backgroundImage = peeks[0] ? `url("${getSizedCoverUrl(peeks[0], 192)}")` : '';
+      }
+      if (stack2?.style) {
+        stack2.style.backgroundImage = peeks[1] ? `url("${getSizedCoverUrl(peeks[1], 192)}")` : '';
+      }
+    }
+
+    if (coverHost) {
+      coverHost.textContent = '';
+      if (primary?.url) {
+        coverHost.appendChild(createElement('img', {
+          className: 'discover-radio-cover-img',
+          attributes: {
+            src: getSizedCoverUrl(primary.url, 192),
+            alt: primary.title || '心动电台封面',
+          },
+        }));
+      } else {
+        coverHost.appendChild(createElement('div', {
+          className: 'discover-radio-cover-fallback',
+          children: [createIcon('disc', { size: 34 })],
+        }));
+      }
+    }
+  }
+
   renderHeroCards() {
     if (typeof document === 'undefined') return;
     this.syncExploreSliderUI();
+
+    const rawRatio = state.get('settings')?.smart_radio_explore_ratio;
+    const ratio = Number.isFinite(Number(rawRatio)) ? Number(rawRatio) : 0.4;
+    const pct = Math.max(0, Math.min(100, Math.round(ratio * 100)));
+    const isSmartMode = state.get('playMode') === 'smart_radio';
+    const currentSong = isSmartMode ? state.get('currentPlayingSong') : null;
+    const isSmartActive = isSmartMode && Boolean(currentSong);
+    const isSmartPlaying = isSmartActive && Boolean(state.get('isPlaying'));
+    const exhausted = Boolean(state.get('radioExhausted'));
+
+    // Status pill
+    const statusPill = document.getElementById('discover-radio-status-pill');
+    if (statusPill) {
+      let stateKey = 'idle';
+      let statusText = '待机';
+      if (this.loadingSmartRadio || this.liveTunePending) {
+        stateKey = 'loading';
+        statusText = '调频中';
+      } else if (exhausted) {
+        stateKey = 'paused';
+        statusText = '本轮已播完';
+      } else if (this.liveTuneRecentNotice && isSmartActive) {
+        stateKey = 'tuned';
+        statusText = '已按新口味更新';
+      } else if (isSmartPlaying) {
+        stateKey = 'playing';
+        statusText = '正在播放';
+      } else if (isSmartActive) {
+        stateKey = 'paused';
+        statusText = '已暂停';
+      }
+      if (statusPill.dataset) statusPill.dataset.state = stateKey;
+      const textNode = statusPill.querySelector?.('.radio-status-text');
+      if (textNode) textNode.textContent = statusText;
+    }
+
+    // Headline, subline & queue button
+    const headline = document.getElementById('discover-radio-headline');
+    const subline = document.getElementById('discover-radio-subline');
+    const queueBtn = document.getElementById('discover-radio-queue-btn');
+    if (isSmartActive && currentSong) {
+      if (headline) {
+        headline.textContent = currentSong.title || '心动电台';
+        headline.classList?.add('is-clickable');
+        headline.setAttribute?.('title', isSmartPlaying ? '点击暂停心动电台' : '点击继续心动电台');
+      }
+      if (subline) {
+        const artistText = formatArtists(currentSong.artists);
+        const reason = String(currentSong.recommend_reason || '').trim();
+        subline.textContent = reason ? `${artistText} · ${reason}` : (artistText || '心动电台实时编排');
+      }
+      if (queueBtn) {
+        const queueLen = (state.get('playQueue') || []).length;
+        queueBtn.hidden = queueLen === 0;
+        queueBtn.textContent = queueLen > 0 ? `队列 ${queueLen} 首` : '队列';
+      }
+    } else {
+      const mood = this.formatSmartRadioMood(pct);
+      if (headline) {
+        headline.textContent = mood.title;
+        headline.classList?.remove('is-clickable');
+        headline.setAttribute?.('title', mood.title);
+      }
+      if (subline) subline.textContent = mood.sub;
+      if (queueBtn) queueBtn.hidden = true;
+    }
+
+    // Intuitive primary button + Next button + Live Tuning feedback chip
     const heartbeatBtn = document.getElementById('discover-heartbeat-btn');
     if (heartbeatBtn) {
       heartbeatBtn.disabled = this.loadingSmartRadio;
-      const isSmartActive = state.get('playMode') === 'smart_radio';
-      const label = heartbeatBtn.querySelector('.btn-label');
-      if (label) {
-        label.textContent = this.loadingSmartRadio
-          ? '编排中...'
-          : (state.get('radioExhausted') ? '本轮已听完 · 允许重播' : isSmartActive ? '重新编排心动电台' : '开启心动电台');
+      if (this.loadingSmartRadio) {
+        updateActionButton(heartbeatBtn, 'refresh', '调频中...');
+      } else if (exhausted) {
+        updateActionButton(heartbeatBtn, 'refresh', '开启新一轮');
+      } else if (isSmartPlaying) {
+        updateActionButton(heartbeatBtn, 'pause', '暂停电台');
+      } else if (isSmartActive) {
+        updateActionButton(heartbeatBtn, 'play', '继续电台');
+      } else {
+        updateActionButton(heartbeatBtn, 'play', '开启电台');
       }
     }
-    const tagsEl = document.getElementById('discover-smart-radio-tags');
-    if (tagsEl) {
-      tagsEl.textContent = '';
-      const bd = this.smartRadioBreakdown;
-      const similarCount = bd ? (bd.multi_seed_similar ?? bd.similar_graph ?? 0) : 0;
-      const pills = bd
-        ? [
-            bd.dusty_gems ? `沉睡宝藏 ${bd.dusty_gems}` : '',
-            bd.fresh_rotation ? `近期心头好 ${bd.fresh_rotation}` : '',
-            similarCount ? `共同相似 ${similarCount}` : '',
-            bd.exploration ? `探索发现 ${bd.exploration}` : '',
-          ].filter(Boolean)
-        : [];
-      pills.forEach(txt => {
-        tagsEl.appendChild(createElement('span', { className: 'badge badge-muted discover-radio-tag', text: txt }));
-      });
+
+    const nextBtn = document.getElementById('discover-radio-next-btn');
+    if (nextBtn) {
+      nextBtn.hidden = !isSmartActive || exhausted;
     }
+
+    const liveFeedback = document.getElementById('discover-radio-live-feedback');
+    if (liveFeedback) {
+      liveFeedback.hidden = !(this.liveTuneFeedbackVisible && isSmartActive && !exhausted && !this.liveTunePending);
+    }
+
+    this.renderRadioCoverStage();
+    this.syncTunerPlayingState();
   }
 
   _dispatchTabNavigation(detail) {
@@ -774,25 +1104,6 @@ class DiscoverManager {
     if (EventCtor) {
       window.dispatchEvent(new EventCtor('switch-tab', { detail }));
     }
-  }
-
-  _spotlightDustySection(dustyCount) {
-    const section = typeof document !== 'undefined' ? document.getElementById('discover-dusty-section') : null;
-    const gems = state.get('dustyGems') || [];
-    if (gems.length === 0 && !this.loadingDustyGems) {
-      this.loadDustyGems();
-    }
-    if (section) {
-      section.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-      section.classList?.remove('is-spotlight');
-      if (this.dustySpotlightTimer) clearTimeout(this.dustySpotlightTimer);
-      section.classList?.add('is-spotlight');
-      this.dustySpotlightTimer = setTimeout(() => {
-        section.classList?.remove('is-spotlight');
-        this.dustySpotlightTimer = null;
-      }, 1400);
-    }
-    toast.info('沉睡宝藏', dustyCount > 0 ? `已定位到 ${dustyCount} 首长期未听好歌，点击卡片或「均衡随机播」即可唤醒` : '正在从本地曲库挖掘沉睡宝藏');
   }
 
   renderInsightsBar() {
@@ -806,7 +1117,7 @@ class DiscoverManager {
     const totalPlays = Number(data?.total_plays) || 0;
     const totalCompleted = Number(data?.total_completed) || 0;
     const totalMins = Number(data?.total_listen_minutes) || 0;
-    const dustyCount = Number(data?.dusty_gems_count) || (state.get('dustyGems') || []).length;
+    const dustyCount = Number(data?.dusty_gems_count) || this.dustyTotal || (state.get('dustyGems') || []).length;
     const cloudCount = Number(data?.cloud_count) || (state.get('cloudSongs') || []).length;
     const localCount = Number(data?.local_count) || (state.get('localSongs') || []).length;
     const topArtists = Array.isArray(data?.top_artists)
@@ -862,8 +1173,8 @@ class DiscoverManager {
       label: '沉睡宝藏',
       value: `${dustyCount} 首长期未听`,
       icon: 'gem',
-      hint: '点击定位并唤醒长期未听的好歌',
-      onActivate: () => this._spotlightDustySection(dustyCount),
+      hint: '点击进入沉睡宝藏专题页，按歌单与听歌记忆自由探索',
+      onActivate: () => this._dispatchTabNavigation({ tab: 'dusty' }),
     }));
 
     bar.appendChild(buildStandardPill({
@@ -952,6 +1263,7 @@ class DiscoverManager {
 
     const gems = state.get('dustyGems') || [];
     if (playAllBtn) playAllBtn.disabled = gems.length === 0;
+    this.syncDustyShowcaseHeader();
     grid.textContent = '';
 
     if (gems.length === 0) {
@@ -959,13 +1271,14 @@ class DiscoverManager {
         className: 'discover-recent-empty',
         text: this.loadingDustyGems ? '正在从本地曲库挖掘沉睡宝藏...' : '同步红心歌单并听歌一段时间后，这里会定期唤醒超过 30 天未听的好歌。',
       }));
-      this.syncDustyCarouselState();
       return;
     }
 
-    gems.slice(0, 12).forEach((song, idx) => {
+    gems.slice(0, DUSTY_SHOWCASE_LIMIT).forEach((song, idx) => {
+      const reasonText = String(song.recommend_reason || '').trim() || '曲库深处 · 长期未听';
       const card = createElement('div', {
-        className: 'discover-recent-card discover-dusty-card',
+        className: 'discover-dusty-card',
+        dataset: { trackKey: getTrackKey(song) },
         attributes: { role: 'button', tabindex: '0', 'aria-label': `播放沉睡宝藏 ${song.title || '曲目'}` },
         events: {
           click: () => player.playQueue(gems, idx, 'order', '发现 · 沉睡宝藏'),
@@ -981,22 +1294,30 @@ class DiscoverManager {
           }),
         },
         children: [
-          createElement('img', {
-            className: 'discover-recent-cover',
-            attributes: {
-              src: getSizedCoverUrl(song.cover_url, 96, '藏'),
-              alt: song.title || '封面',
-              loading: 'lazy',
-            },
+          createElement('div', {
+            className: 'discover-dusty-cover-wrap',
+            children: [
+              createElement('img', {
+                className: 'discover-dusty-cover',
+                attributes: {
+                  src: getSizedCoverUrl(song.cover_url, 192, '藏'),
+                  alt: song.title || '封面',
+                  loading: 'lazy',
+                },
+              }),
+              createElement('span', {
+                className: 'discover-dusty-play-overlay',
+                attributes: { 'aria-hidden': 'true' },
+                children: [createIcon('play', { size: 16 })],
+              }),
+            ],
           }),
           createElement('div', {
-            className: 'discover-recent-meta',
+            className: 'discover-dusty-meta',
             children: [
-              createElement('div', { className: 'discover-recent-title', text: song.title || '未知曲目' }),
-              createElement('div', { className: 'discover-recent-artist', text: formatArtists(song.artists) }),
-              song.recommend_reason
-                ? createElement('div', { className: 'discover-dusty-reason', text: song.recommend_reason })
-                : null,
+              createElement('div', { className: 'discover-dusty-title', text: song.title || '未知曲目', attributes: { title: song.title || '未知曲目' } }),
+              createElement('div', { className: 'discover-dusty-artist', text: formatArtists(song.artists) }),
+              createElement('div', { className: 'discover-dusty-reason', text: reasonText, attributes: { title: reasonText } }),
             ],
           }),
         ],
@@ -1004,10 +1325,7 @@ class DiscoverManager {
       card.appendChild(quickNextButton(song));
       grid.appendChild(card);
     });
-    this.syncDustyCarouselState();
-    if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(() => this.syncDustyCarouselState());
-    }
+    syncPlayingRowIndicators(state.get('currentPlayingSong'), Boolean(state.get('isPlaying')), grid);
   }
 
   renderFmCard() {

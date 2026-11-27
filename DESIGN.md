@@ -114,24 +114,26 @@ When `GET /api/status` reports unauthenticated or offline status and local `cach
 - **Collapsible left rail**: `208px` expanded on desktop (`224px` at `>= 1920px`), `64px` compact icon mode, and automatically collapses into a slide-over drawer at narrow widths (`<= 1024px`, covering `1024×768` at 125%/150% Windows DPI scaling) with zero horizontal overflow and all controls reachable. The rail header carries a quiet single-line uppercase studio colophon (`13px` secondary ink, avoiding double-branding echo beneath the native OS title bar), while the `本机运行` status indicator (`.rail-status-bar > .brand-badge`) anchors quietly at the bottom of the rail. The `Ctrl+K` search trigger sits in the opaque top utility header on a recessed `--bg-well` hairline surface.
 - **Persistent global bottom player (`84px` comfortable / `74px` compact)**: remains mounted across all views on an opaque `--bg-player` console with `>= 8px` vertical clearance below `#player-inline-lyric`, a harmonized `38px` play circle (`--player-play-bg` / `--player-play-fg`), crisp unblurred `--bg-track` scrubber/volume meters, and an inline tabular queue pill (`.player-queue-btn > .queue-count-dot`, `position: static`, zero overlap with the queue SVG). Owns the single active `<audio>` transport (protected by `resetMediaElement` and dual-playback suppression), compact inline current lyric (`#player-inline-lyric`, hidden while stage is open), explicit `词` desktop-lyrics button (`#player-desktop-lyrics-btn` with `.active` state), `更多` overflow popover (`#player-more-btn` housing `-5s`, `+5s`, chorus jump, similar songs, switch audio source, side lyrics, and stage), unified play queue with Fiedler Balanced Shuffle + `playHistoryStack`, safe same-origin Web Audio graph, and Media Session / Windows global hotkey integration.
 
-### Destination 1: `发现` (Discover)
+### Destination 1: `发现` (Discover) & Dedicated `#view-dusty` Explorer
 
 ```text
-┌─ 心动电台 (1fr) ─────────────┬─ 私人漫游 (1fr) ─────────────┐
-│ [熟歌 ━━●━━ 探索 37%] (step=1%) │ [108×108 Cover] Play/Next/♡  │
-│ 4路混合本地优先电台 · 一键开播   │ 经典原生只读漫游              │
-├─────────────────────────────────┴──────────────────────────────┤
-│ 本地听歌洞察：总播放 · 总时长 · 沉睡宝藏数 · Top 5 歌手 · 音质  │
-├────────────────────────────────────────────────────────────────┤
-│ 沉睡宝藏（横向卡片条，最多12首，>30天未听 / 从未播放）[播放全部]│
-├────────────────────────────────────────────────────────────────┤
-│ 每日推荐 (30首) [播放全部] — Track rows w/ 推荐理由 + 不再推荐  │
-│ 最近播放 / 相似歌曲入口（支持右键菜单）                          │
-└────────────────────────────────────────────────────────────────┘
+┌─ 私人漫游 (1fr) ────────────────┬─ 心动电台 (1fr) ───────────────────────┐
+│ [Cover] Title · Artist          │ [Vinyl+Cover Stage] Live Title / Mood  │
+│ [开始/暂停] [换一首] [不想听]    │ ━━熟歌━━┃━━新声━━  [0%|30%|55%|85%]    │
+│ 经典原生只读漫游                 │ [开启/暂停/继续] [下一首] + Live 调频  │
+├─────────────────────────────────┴────────────────────────────────────────┤
+│ 本地听歌洞察：总播放 · 沉睡宝藏(->#view-dusty) · 本地曲库 · 常听歌手     │
+├──────────────────────────────────────────────────────────────────────────┤
+│ 沉睡宝藏（2行8卡精选网格 · 记忆标签）[随机唤醒] | [上一批][换一批][全部] │
+├──────────────────────────────────────────────────────────────────────────┤
+│ 每日推荐 (30首) [播放全部] — Track rows w/ 推荐理由 + 不再推荐            │
+│ 最近播放 / 相似歌曲入口（支持右键菜单）                                    │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-- Equal-width `1fr 1fr` 2-column listening hero (`私人漫游` + `心动电台`, matching surface elevation, `--shadow-card`, `10px` card radius, `6px` cover radius, recessed `--bg-well` explore slider tray, no English `"Personal FM"` subtitle). The Smart Radio explore slider moves continuously at `step="1"` (`20%–80%`), updates `探索 N%` (`tabular-nums`) and `--fill` live, and debounces `api.saveSettings` by 300ms.
-- **Toolbar weight budget & Discover hygiene**: section toolbars (`沉睡宝藏`, `每日推荐`) enforce at most **1 primary CTA + 1 secondary CTA + hairline divider + uniform quiet ghost actions**. `沉睡宝藏` renders as a scrollbarless horizontal strip (`scrollbar-width: none`, hidden webkit scrollbar) with dynamic edge paper-fade masks and `#discover-dusty-prev` / `#discover-dusty-next` chevron steppers with honest disabled bounds. `每日推荐` rows suppress redundant generic `"网易云每日推荐"` / `"每日推荐"` pills (displaying only distinctive editorial reasons) and progressively reveal secondary row actions (`下一首`, unliked heart, add-to-playlist, icon-only `不再推荐` with `.sr-only` label) on `:hover` / `:focus-within` while keeping active liked hearts and right-aligned `tabular-nums` durations calm and steady.
+- Equal-width `1fr 1fr` 2-column listening hero (`私人漫游` + `心动电台`, matching surface elevation, `--shadow-card`, `10px` card radius, `6px` cover radius, no English `"Personal FM"` subtitle).
+- **Smart Radio Vinyl Sleeve & Live Tuning Console (`discover.js` / `discover.css`)**: Pairs a tactile matte-charcoal vinyl record peeking behind a real album cover sleeve (`#discover-radio-stage`, showing the playing Smart Radio track or stacked curated fallback covers, gently sliding out and spinning on GPU-only `transform` while playing and strictly pausing in `quiet_eco`, `gpu_performance_mode === 'eco'`, `game_mode`, blur/hidden, inactive tab, or `prefers-reduced-motion`) with an integrated frameless precision tuner rail (`0–100%` continuous slider + wheel ±5% + 4 preset stops `熟歌 0% | 偏熟 30% | 均衡 55% | 新声 85%`), 4px two-tone blend bar, and an intuitive Play/Pause/Resume/Next state machine (`开启电台` / `暂停电台` / `继续电台` / `开启新一轮` + `下一首`). Adjusting the tuner while Smart Radio is active debounces 450ms, rearranges upcoming tracks in the background via `POST /api/recommend/smart-radio`, and displays an inline `后续队列已更新` + `切一首试试` cue.
+- **Toolbar weight budget & Dusty Gems 2-row Showcase + Dedicated `#view-dusty` Explorer**: section toolbars (`沉睡宝藏`, `每日推荐`) enforce at most **1 primary CTA + 1 secondary CTA + hairline divider + uniform quiet ghost actions**. `沉睡宝藏` on Discover renders a spacious 2-row 8-card responsive grid (`repeat(4, minmax(0, 1fr))` on desktop) with `56×56px` album covers, warm amber memory tags (`N 天未听 · 曾播 M 次` / `尚未播放 · 来自「歌单」`), reversible `上一批` / `换一批` batch history, and `查看全部 →` (as well as clicking the `沉睡宝藏` Insights pill) opening the dedicated `#view-dusty` explorer page (`web/js/dusty_view.js`, `web/css/dusty_view.css`) with kind/playlist/search/sort filters, grid/list toggle, and seeded pagination. `每日推荐` rows suppress redundant generic `"网易云每日推荐"` / `"每日推荐"` pills and progressively reveal secondary row actions on `:hover` / `:focus-within`.
 - **4-Way Local-First Smart Radio** (`GET /api/recommend/smart-radio`): blends Dusty Gems (30%) + Fresh Rotation (30%) + Multi-Seed `/simi/song` Graph Intersection (25% across 3–5 diverse seeds) + FM/Daily Exploration (15%), modulated by `explore_ratio`, filtering DJ/cover/karaoke and `not_interested`, spread via Martin Fiedler balanced shuffle, auto-refilling when `<=3` tracks remain, with honest reason tags.
 
 ### Destination 2: `音乐库` (My Library / Catalog)

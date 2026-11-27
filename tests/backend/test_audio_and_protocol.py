@@ -1589,8 +1589,8 @@ class Wave3ShuffleSmartRadioAndAmllTestCase(unittest.TestCase):
             gem_ids = {s["id"] for s in gems["songs"]}
             self.assertEqual({1, 2, 3}, gem_ids)  # excludes fresh(4), cooldown(5), not_interested(6)!
             by_gem = {s["id"]: s for s in gems["songs"]}
-            self.assertEqual("沉睡宝藏 · 长期未听", by_gem[1]["recommend_reason"])
-            self.assertEqual("沉睡宝藏 · 尚未播放", by_gem[2]["recommend_reason"])
+            self.assertEqual("50 天未听 · 曾播 1 次", by_gem[1]["recommend_reason"])
+            self.assertEqual("尚未播放 · 来自「Liked」", by_gem[2]["recommend_reason"])
 
             radio = service.smart_radio("42", explore_ratio=0.4, exclude_ids={3}, limit=10, now_ts=now_ts, seed=7)
             self.assertFalse(radio["degraded"])

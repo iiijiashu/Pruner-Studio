@@ -120,19 +120,18 @@
   --shadow-card-hover: 0 4px 10px rgba(0, 0, 0, 0.32), 0 12px 26px rgba(0, 0, 0, 0.28);
   --shadow-press: inset 0 2px 4px rgba(0, 0, 0, 0.34);
 
-  /* Braun / Dieter Rams Analog Radio Tuner Dial Tokens */
-  --tuner-face-start: #21232a;
-  --tuner-face-end: #16181e;
-  --tuner-bezel: rgba(255, 255, 255, 0.18);
-  --tuner-inner-ring: rgba(255, 255, 255, 0.09);
-  --tuner-tick-major: #ccc6bc;
-  --tuner-tick-minor: rgba(204, 198, 188, 0.34);
+  /* Smart Radio Vinyl & Warm Amber Accent Tokens */
+  --radio-amber: #e09f3e;
+  --radio-amber-text: #ebb45e;
+  --radio-amber-subtle: rgba(224, 159, 62, 0.16);
+  --radio-familiar: #8f7e6d;
+  --radio-vinyl-body: #090a0d;
+  --radio-vinyl-rim: #595e70;
+  --radio-vinyl-groove: rgba(255, 255, 255, 0.17);
+  --radio-vinyl-sheen: rgba(255, 255, 255, 0.12);
+  --radio-vinyl-label: #e09f3e;
+  --radio-vinyl-shadow: 0 4px 14px rgba(0, 0, 0, 0.56), 0 0 0 1px rgba(255, 255, 255, 0.08);
   --tuner-needle: #e09f3e;
-  --tuner-plate-bg: #13151a;
-  --tuner-plate-border: rgba(255, 255, 255, 0.13);
-  --tuner-plate-text: #ebe4d6;
-  --tuner-hub-bg: #292c35;
-  --tuner-hub-ring: #74706a;
 
   /* Motion */
   --transition-fast: 120ms ease;
@@ -196,11 +195,14 @@ html[data-theme="midnight"] {
   --surface-sheen: none;
   --rim-top: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --shadow-card: none;
-  --tuner-face-start: #15161b;
-  --tuner-face-end: #0b0c0f;
-  --tuner-bezel: rgba(255, 255, 255, 0.2);
+  --radio-amber: #e6a645;
+  --radio-amber-text: #f0bc68;
+  --radio-vinyl-body: #06070a;
+  --radio-vinyl-rim: #525769;
+  --radio-vinyl-groove: rgba(255, 255, 255, 0.2);
+  --radio-vinyl-sheen: rgba(255, 255, 255, 0.14);
+  --radio-vinyl-shadow: 0 4px 14px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.1);
   --tuner-needle: #e6a645;
-  --tuner-plate-bg: #08090c;
 }
 
 /* Crisp Editorial Paper Light Theme (Body contrast >= 4.5:1) */
@@ -253,18 +255,17 @@ html[data-theme="light"] {
   --shadow-card: 0 1px 2px rgba(27, 26, 24, 0.04), 0 4px 12px rgba(27, 26, 24, 0.03);
   --shadow-card-hover: 0 3px 8px rgba(27, 26, 24, 0.07), 0 10px 20px rgba(27, 26, 24, 0.05);
   --shadow-press: inset 0 1px 2px rgba(27, 26, 24, 0.12);
-  --tuner-face-start: #f5f3ee;
-  --tuner-face-end: #e9e5dc;
-  --tuner-bezel: #bfb9ad;
-  --tuner-inner-ring: rgba(27, 26, 24, 0.12);
-  --tuner-tick-major: #3d3b37;
-  --tuner-tick-minor: rgba(61, 59, 55, 0.32);
+  --radio-amber: #bd761b;
+  --radio-amber-text: #8f540c;
+  --radio-amber-subtle: rgba(189, 118, 27, 0.14);
+  --radio-familiar: #7a6b5c;
+  --radio-vinyl-body: #23211e;
+  --radio-vinyl-rim: #3e3a34;
+  --radio-vinyl-groove: rgba(255, 255, 255, 0.11);
+  --radio-vinyl-sheen: rgba(255, 255, 255, 0.08);
+  --radio-vinyl-label: #c98224;
+  --radio-vinyl-shadow: 0 3px 10px rgba(0, 0, 0, 0.24);
   --tuner-needle: #bd761b;
-  --tuner-plate-bg: #faf9f5;
-  --tuner-plate-border: #cec9be;
-  --tuner-plate-text: #2a2825;
-  --tuner-hub-bg: #eae7df;
-  --tuner-hub-ring: #6e6a62;
 }
 
 /* Celadon Mist Soft Light Theme */
@@ -313,18 +314,17 @@ html[data-theme="celadon"] {
   --shadow-card: 0 1px 2px rgba(23, 36, 32, 0.04), 0 4px 12px rgba(23, 36, 32, 0.03);
   --shadow-card-hover: 0 3px 8px rgba(23, 36, 32, 0.07), 0 10px 20px rgba(23, 36, 32, 0.05);
   --shadow-press: inset 0 1px 2px rgba(23, 36, 32, 0.12);
-  --tuner-face-start: #edf2f0;
-  --tuner-face-end: #dfe8e4;
-  --tuner-bezel: #aebfb9;
-  --tuner-inner-ring: rgba(23, 36, 32, 0.13);
-  --tuner-tick-major: #2d423b;
-  --tuner-tick-minor: rgba(45, 66, 59, 0.32);
+  --radio-amber: #b8731a;
+  --radio-amber-text: #854e0b;
+  --radio-amber-subtle: rgba(184, 115, 26, 0.14);
+  --radio-familiar: #586e66;
+  --radio-vinyl-body: #1c2622;
+  --radio-vinyl-rim: #34443e;
+  --radio-vinyl-groove: rgba(255, 255, 255, 0.11);
+  --radio-vinyl-sheen: rgba(255, 255, 255, 0.08);
+  --radio-vinyl-label: #c27c22;
+  --radio-vinyl-shadow: 0 3px 10px rgba(0, 0, 0, 0.24);
   --tuner-needle: #b8731a;
-  --tuner-plate-bg: #f5f9f7;
-  --tuner-plate-border: #bdd0c9;
-  --tuner-plate-text: #1f312b;
-  --tuner-hub-bg: #e1e9e6;
-  --tuner-hub-ring: #5a7068;
 }
 
 /* Warm Sunlit Parchment Light Theme (Primary Light Anchor) */
@@ -373,18 +373,17 @@ html[data-theme="parchment"] {
   --shadow-card: 0 1px 2px rgba(36, 30, 23, 0.04), 0 4px 12px rgba(36, 30, 23, 0.03);
   --shadow-card-hover: 0 3px 8px rgba(36, 30, 23, 0.07), 0 10px 20px rgba(36, 30, 23, 0.05);
   --shadow-press: inset 0 1px 2px rgba(36, 30, 23, 0.12);
-  --tuner-face-start: #f4f0e8;
-  --tuner-face-end: #eae3d5;
-  --tuner-bezel: #bfb4a2;
-  --tuner-inner-ring: rgba(68, 56, 42, 0.14);
-  --tuner-tick-major: #4a3f33;
-  --tuner-tick-minor: rgba(74, 63, 51, 0.34);
+  --radio-amber: #c47a1f;
+  --radio-amber-text: #8e520c;
+  --radio-amber-subtle: rgba(196, 122, 31, 0.14);
+  --radio-familiar: #7a6855;
+  --radio-vinyl-body: #241f1a;
+  --radio-vinyl-rim: #41382f;
+  --radio-vinyl-groove: rgba(255, 255, 255, 0.11);
+  --radio-vinyl-sheen: rgba(255, 255, 255, 0.08);
+  --radio-vinyl-label: #c88024;
+  --radio-vinyl-shadow: 0 3px 10px rgba(0, 0, 0, 0.24);
   --tuner-needle: #c47a1f;
-  --tuner-plate-bg: #f8f4ec;
-  --tuner-plate-border: #cbbda9;
-  --tuner-plate-text: #3a3127;
-  --tuner-hub-bg: #ede5d7;
-  --tuner-hub-ring: #7c6f5e;
 }
 
 @media (prefers-color-scheme: light) {
@@ -433,18 +432,17 @@ html[data-theme="parchment"] {
     --shadow-card: 0 1px 2px rgba(27, 26, 24, 0.04), 0 4px 12px rgba(27, 26, 24, 0.03);
     --shadow-card-hover: 0 3px 8px rgba(27, 26, 24, 0.07), 0 10px 20px rgba(27, 26, 24, 0.05);
     --shadow-press: inset 0 1px 2px rgba(27, 26, 24, 0.12);
-    --tuner-face-start: #f5f3ee;
-    --tuner-face-end: #e9e5dc;
-    --tuner-bezel: #bfb9ad;
-    --tuner-inner-ring: rgba(27, 26, 24, 0.12);
-    --tuner-tick-major: #3d3b37;
-    --tuner-tick-minor: rgba(61, 59, 55, 0.32);
+    --radio-amber: #bd761b;
+    --radio-amber-text: #8f540c;
+    --radio-amber-subtle: rgba(189, 118, 27, 0.14);
+    --radio-familiar: #7a6b5c;
+    --radio-vinyl-body: #23211e;
+    --radio-vinyl-rim: #3e3a34;
+    --radio-vinyl-groove: rgba(255, 255, 255, 0.11);
+    --radio-vinyl-sheen: rgba(255, 255, 255, 0.08);
+    --radio-vinyl-label: #c98224;
+    --radio-vinyl-shadow: 0 3px 10px rgba(0, 0, 0, 0.24);
     --tuner-needle: #bd761b;
-    --tuner-plate-bg: #faf9f5;
-    --tuner-plate-border: #cec9be;
-    --tuner-plate-text: #2a2825;
-    --tuner-hub-bg: #eae7df;
-    --tuner-hub-ring: #6e6a62;
   }
 }
 

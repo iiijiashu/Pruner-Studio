@@ -14,7 +14,7 @@ from typing import Any, Callable
 from .errors import propagate_risk_control, AppError
 from .models import Song
 from .netease_client import NeteaseClient, recommendation_reads, ReadBudgetReached
-from .shuffle_engine import balanced_shuffle, recency_bucket
+from .shuffle_engine import balanced_shuffle, parse_timestamp_seconds, recency_bucket
 
 def beijing_recommend_day(now_ts=None) -> str:
     now = datetime.fromtimestamp(time.time() if now_ts is None else now_ts, timezone(timedelta(hours=8)))
@@ -36,6 +36,209 @@ _ACTION_WEIGHTS = {
     "replay": 0.14,
 }
 _MAX_ARTIST_BOOST = 0.45
+
+_DUSTY_VALID_KINDS = frozenset({"all", "forgotten", "unplayed"})
+_DUSTY_VALID_SORTS = frozenset({"balanced", "oldest", "most_played"})
+_DUSTY_SECONDS_PER_DAY = 86_400.0
+_DUSTY_MAX_PLAYLISTS = 24
+
+
+def _resolve_dusty_playlist_name(track: dict[str, Any]) -> str:
+    existing = str(track.get("source_playlist_name") or "").strip()
+    if existing:
+        return existing
+    if str(track.get("provider") or "").strip().lower() == "local":
+        return "本地曲库"
+    if bool(track.get("is_cloud", False)):
+        return "网易云云盘"
+    return ""
+
+
+def _dusty_memory_reason(
+    dusty_kind: str,
+    days_since_played: int | None,
+    play_count: int,
+    source_playlist_name: str,
+) -> str:
+    if dusty_kind == "forgotten":
+        if days_since_played is not None and play_count > 0:
+            return f"{days_since_played} 天未听 · 曾播 {play_count} 次"
+        if days_since_played is not None:
+            return f"{days_since_played} 天未听"
+        return "超过 30 天未听"
+    if source_playlist_name:
+        return f"尚未播放 · 来自「{source_playlist_name}」"
+    return "收藏后尚未播放"
+
+
+def _enrich_dusty_track(
+    track: dict[str, Any],
+    *,
+    bucket: str,
+    history_row: dict[str, Any] | None,
+    now_ts: float,
+) -> tuple[dict[str, Any], float | None]:
+    dusty_kind = "forgotten" if bucket == "dusty" else "unplayed"
+    row = history_row if isinstance(history_row, dict) else None
+    play_count = max(0, int(row.get("play_count") or 0)) if row else 0
+    completed_count = max(0, int(row.get("completed_count") or 0)) if row else 0
+    raw_last = row.get("last_played_at") if row else None
+    last_played_at = str(raw_last).strip() if raw_last is not None and str(raw_last).strip() else None
+    last_ts = parse_timestamp_seconds(raw_last) if raw_last is not None and raw_last != "" else None
+    days_since_played = (
+        max(0, int((now_ts - last_ts) // _DUSTY_SECONDS_PER_DAY))
+        if last_ts is not None
+        else None
+    )
+    source_playlist_name = _resolve_dusty_playlist_name(track)
+    entry = dict(track)
+    entry["dusty_kind"] = dusty_kind
+    entry["days_since_played"] = days_since_played
+    entry["play_count"] = play_count
+    entry["completed_count"] = completed_count
+    entry["last_played_at"] = last_played_at
+    entry["source_playlist_name"] = source_playlist_name
+    entry["recommend_source"] = "dusty_gems"
+    entry["recommend_reason"] = _dusty_memory_reason(
+        dusty_kind, days_since_played, play_count, source_playlist_name
+    )
+    return entry, last_ts
+
+
+def _matches_dusty_query(track: dict[str, Any], q_lower: str) -> bool:
+    if q_lower in str(track.get("title") or "").casefold():
+        return True
+    raw_artists = track.get("artists")
+    if isinstance(raw_artists, list):
+        parts = [str(a).strip() for a in raw_artists if str(a).strip()]
+        if q_lower in " ".join(parts).casefold() or (
+            len(parts) > 1 and q_lower in " / ".join(parts).casefold()
+        ):
+            return True
+    elif isinstance(raw_artists, str) and q_lower in raw_artists.casefold():
+        return True
+    if q_lower in str(track.get("album") or "").casefold():
+        return True
+    return q_lower in str(track.get("source_playlist_name") or "").casefold()
+
+
+def _dusty_artist_key(item: dict[str, Any]) -> str:
+    raw = item.get("artists")
+    if isinstance(raw, list):
+        for artist in raw:
+            cleaned = _norm_artist(str(artist))
+            if cleaned:
+                return cleaned
+    elif isinstance(raw, str):
+        return _norm_artist(raw)
+    single = item.get("artist")
+    return _norm_artist(str(single)) if isinstance(single, str) else ""
+
+
+def _interleave_dusty_balanced(
+    forgotten: list[dict[str, Any]],
+    unplayed: list[dict[str, Any]],
+    play_history: dict[Any, Any],
+    *,
+    seed: int | None,
+    now_ts: float,
+) -> list[dict[str, Any]]:
+    if seed is not None:
+        seed_rng = random.Random(seed)
+        f_seed: int | None = seed_rng.randrange(1 << 63)
+        u_seed: int | None = seed_rng.randrange(1 << 63)
+    else:
+        f_seed = None
+        u_seed = None
+
+    f_list = balanced_shuffle(forgotten, play_history, seed=f_seed, now_ts=now_ts)
+    u_list = balanced_shuffle(unplayed, play_history, seed=u_seed, now_ts=now_ts)
+    f_keys = [_dusty_artist_key(item) for item in f_list]
+    u_keys = [_dusty_artist_key(item) for item in u_list]
+
+    n_f = len(f_list)
+    n_u = len(u_list)
+    fi = 0
+    ui = 0
+    merged: list[tuple[str, dict[str, Any]]] = []
+    last_artist = ""
+
+    def _pick_non_colliding(
+        items: list[dict[str, Any]], keys: list[str], idx: int, total: int, avoid: str
+    ) -> tuple[str, dict[str, Any]] | None:
+        if idx >= total:
+            return None
+        if not avoid or not keys[idx] or keys[idx] != avoid:
+            return keys[idx], items[idx]
+        limit_scan = min(total, idx + 16)
+        for j in range(idx + 1, limit_scan):
+            if not keys[j] or keys[j] != avoid:
+                items[idx], items[j] = items[j], items[idx]
+                keys[idx], keys[j] = keys[j], keys[idx]
+                return keys[idx], items[idx]
+        return None
+
+    while fi < n_f or ui < n_u:
+        coord_f = (fi + 0.5) / n_f if fi < n_f else float("inf")
+        coord_u = (ui + 0.5) / n_u if ui < n_u else float("inf")
+        prefer_f = coord_f <= coord_u
+
+        if prefer_f:
+            picked = _pick_non_colliding(f_list, f_keys, fi, n_f, last_artist)
+            if picked is not None:
+                fi += 1
+            else:
+                picked = _pick_non_colliding(u_list, u_keys, ui, n_u, last_artist)
+                if picked is not None:
+                    ui += 1
+                else:
+                    picked = (f_keys[fi], f_list[fi])
+                    fi += 1
+        else:
+            picked = _pick_non_colliding(u_list, u_keys, ui, n_u, last_artist)
+            if picked is not None:
+                ui += 1
+            else:
+                picked = _pick_non_colliding(f_list, f_keys, fi, n_f, last_artist)
+                if picked is not None:
+                    fi += 1
+                else:
+                    picked = (u_keys[ui], u_list[ui])
+                    ui += 1
+
+        merged.append(picked)
+        last_artist = picked[0]
+
+    has_collision = any(
+        merged[i][0] and merged[i][0] == merged[i - 1][0] for i in range(1, len(merged))
+    )
+    if has_collision:
+        for _ in range(len(merged)):
+            collision_idx = -1
+            for i in range(1, len(merged)):
+                if merged[i][0] and merged[i][0] == merged[i - 1][0]:
+                    collision_idx = i
+                    break
+            if collision_idx < 0:
+                break
+            artist_to_move = merged[collision_idx][0]
+            moved = False
+            for insert_at in range(len(merged)):
+                if insert_at == collision_idx or insert_at == collision_idx - 1:
+                    continue
+                prev_artist = merged[insert_at - 1][0] if insert_at > 0 else ""
+                next_artist = merged[insert_at][0] if insert_at < len(merged) else ""
+                if artist_to_move != prev_artist and artist_to_move != next_artist:
+                    item = merged.pop(collision_idx)
+                    adjusted = insert_at if insert_at < collision_idx else insert_at - 1
+                    merged.insert(adjusted, item)
+                    moved = True
+                    break
+            if not moved:
+                break
+
+    return [item for _akey, item in merged]
+
 
 _SOURCE_LABELS = {
     "daily": "网易云每日推荐",
@@ -767,12 +970,32 @@ class RecommendService:
         account_id: str | int = "local",
         *,
         limit: int = 30,
+        offset: int = 0,
+        kind: str = "all",
+        playlist: str = "",
+        q: str = "",
+        sort: str = "balanced",
         now_ts: float | None = None,
         seed: int | None = None,
-        exclude_ids=(), exclude_keys=(),
+        exclude_ids=(),
+        exclude_keys=(),
     ) -> dict[str, Any]:
         """Surface long-unplayed (>30d) or never-played tracks from the user's own catalog."""
         cap = max(1, min(100, int(limit or 30)))
+        start = max(0, int(offset or 0))
+        kind_norm = str(kind or "all").strip().lower()
+        if kind_norm not in _DUSTY_VALID_KINDS:
+            kind_norm = "all"
+        sort_norm = str(sort or "balanced").strip().lower()
+        if sort_norm not in _DUSTY_VALID_SORTS:
+            sort_norm = "balanced"
+        playlist_filter = str(playlist or "").strip()
+        query_lower = str(q or "").strip().casefold()
+        effective_now = time.time() if now_ts is None else float(now_ts)
+        acct_key = str(account_id if account_id is not None else "local")
+        excluded_id_set = set(exclude_ids or ())
+        excluded_key_set = set(exclude_keys or ())
+
         feedback_rows, _artist_lookup = self._load_feedback(account_id, with_artists=False)
         blocked_ids = {
             int(row["song_id"])
@@ -785,40 +1008,160 @@ class RecommendService:
         catalog_songs, _liked_ids = self._load_catalog_songs(account_id)
 
         candidates: list[dict[str, Any]] = []
+        last_ts_by_key: dict[str, float | None] = {}
         for song in catalog_songs:
             if song.id in blocked_ids:
                 continue
             if song.availability == "unavailable" and not song.is_cloud:
                 continue
-            bucket = recency_bucket(play_history.get(song.id), now_ts=now_ts)
+            history_row = play_history.get(song.id)
+            bucket = recency_bucket(history_row, now_ts=effective_now)
             if bucket not in {"unplayed", "dusty"}:
                 continue
-            entry = song.to_dict()
-            entry["recommend_source"] = "dusty_gems"
-            entry["recommend_reason"] = "沉睡宝藏 · 长期未听" if bucket == "dusty" else "沉睡宝藏 · 尚未播放"
+            entry, last_ts = _enrich_dusty_track(
+                song.to_dict(),
+                bucket=bucket,
+                history_row=history_row,
+                now_ts=effective_now,
+            )
             candidates.append(entry)
+            last_ts_by_key[entry.get("track_key") or f"netease:{song.id}"] = last_ts
 
         local_tracks = self._local_tracks()
-        seen_keys = {t["track_key"] for t in local_tracks if t.get("track_key")} | {f"netease:{s.id}" for s in catalog_songs}
+        seen_keys = {t["track_key"] for t in local_tracks if t.get("track_key")} | {
+            f"netease:{s.id}" for s in catalog_songs
+        }
         extra_canonical = self._canonical_non_netease_tracks(account_id, exclude_keys=seen_keys)
         combined_non_netease = [*local_tracks, *extra_canonical]
         history_by_key: dict[str, Any] = {}
         if combined_non_netease and self.db is not None:
-            history_by_key = self.db.radio_play_history(account_id)
-            blocked_keys = self.db.blocked_track_keys(account_id)
+            radio_hist_fn = getattr(self.db, "radio_play_history", None)
+            blocked_keys_fn = getattr(self.db, "blocked_track_keys", None)
+            history_by_key = radio_hist_fn(acct_key) if callable(radio_hist_fn) else {}
+            blocked_keys = blocked_keys_fn(acct_key) if callable(blocked_keys_fn) else set()
             for track in combined_non_netease:
                 tkey = track.get("track_key", "")
-                bucket = recency_bucket(history_by_key.get(tkey), now_ts=now_ts)
-                if tkey and tkey not in blocked_keys and bucket in {"dusty", "unplayed"}:
-                    candidates.append({**track, "recommend_source": "dusty_gems",
-                                       "recommend_reason": "沉睡宝藏 · 长期未听" if bucket == "dusty" else "沉睡宝藏 · 尚未播放"})
+                if not tkey or tkey in blocked_keys:
+                    continue
+                history_row = history_by_key.get(tkey)
+                bucket = recency_bucket(history_row, now_ts=effective_now)
+                if bucket not in {"dusty", "unplayed"}:
+                    continue
+                entry, last_ts = _enrich_dusty_track(
+                    track,
+                    bucket=bucket,
+                    history_row=history_row,
+                    now_ts=effective_now,
+                )
+                candidates.append(entry)
+                last_ts_by_key[tkey] = last_ts
+
         total = len(candidates)
-        candidates = [t for t in candidates if (not t["id"] or t["id"] not in exclude_ids)
-                      and t.get("track_key", f"netease:{t['id']}") not in exclude_keys]
-        combined_history: dict[Any, Any] = {**play_history, **history_by_key}
-        shuffled = balanced_shuffle(candidates, combined_history, seed=seed, now_ts=now_ts)
-        return {"songs": shuffled[:cap], "source": "dusty_gems", "degraded": False, "reason": "",
-                "total_candidates": total, "remaining_count": max(0, len(shuffled)-cap), "exhausted": len(shuffled) <= cap}
+        forgotten_count = 0
+        unplayed_count = 0
+        playlist_counts: dict[str, int] = defaultdict(int)
+        for item in candidates:
+            if item["dusty_kind"] == "forgotten":
+                forgotten_count += 1
+            else:
+                unplayed_count += 1
+            pl_name = item["source_playlist_name"]
+            if pl_name:
+                playlist_counts[pl_name] += 1
+
+        counts = {
+            "all": total,
+            "forgotten": forgotten_count,
+            "unplayed": unplayed_count,
+        }
+        playlists = [
+            {"name": name, "count": cnt}
+            for name, cnt in sorted(playlist_counts.items(), key=lambda pair: (-pair[1], pair[0]))[
+                :_DUSTY_MAX_PLAYLISTS
+            ]
+        ]
+
+        filtered: list[dict[str, Any]] = []
+        for item in candidates:
+            tid = item.get("id")
+            tkey = item.get("track_key") or (f"netease:{tid}" if tid else "")
+            if (tid and tid in excluded_id_set) or (tkey and tkey in excluded_key_set):
+                continue
+            if kind_norm != "all" and item["dusty_kind"] != kind_norm:
+                continue
+            if playlist_filter and item["source_playlist_name"] != playlist_filter:
+                continue
+            if query_lower and not _matches_dusty_query(item, query_lower):
+                continue
+            filtered.append(item)
+
+        if sort_norm == "oldest":
+
+            def _oldest_key(item: dict[str, Any]) -> tuple[int, int, float, int, str, str]:
+                is_unplayed = 0 if item["dusty_kind"] == "forgotten" else 1
+                days = item["days_since_played"]
+                days_rank = -(days if days is not None else -1)
+                tkey = item.get("track_key") or f"netease:{item.get('id') or 0}"
+                ts = last_ts_by_key.get(tkey)
+                ts_rank = ts if ts is not None else float("inf")
+                return (
+                    is_unplayed,
+                    days_rank,
+                    ts_rank,
+                    -item["play_count"],
+                    str(item.get("title") or "").casefold(),
+                    tkey,
+                )
+
+            ordered = sorted(filtered, key=_oldest_key)
+        elif sort_norm == "most_played":
+
+            def _most_played_key(item: dict[str, Any]) -> tuple[int, int, int, str, str]:
+                days = item["days_since_played"]
+                days_rank = -(days if days is not None else -1)
+                tkey = item.get("track_key") or f"netease:{item.get('id') or 0}"
+                return (
+                    -item["play_count"],
+                    -item["completed_count"],
+                    days_rank,
+                    str(item.get("title") or "").casefold(),
+                    tkey,
+                )
+
+            ordered = sorted(filtered, key=_most_played_key)
+        else:
+            combined_history: dict[Any, Any] = {**play_history, **history_by_key}
+            forgotten_items = [item for item in filtered if item["dusty_kind"] == "forgotten"]
+            unplayed_items = [item for item in filtered if item["dusty_kind"] == "unplayed"]
+            if forgotten_items and unplayed_items:
+                ordered = _interleave_dusty_balanced(
+                    forgotten_items,
+                    unplayed_items,
+                    combined_history,
+                    seed=seed,
+                    now_ts=effective_now,
+                )
+            else:
+                ordered = balanced_shuffle(filtered, combined_history, seed=seed, now_ts=effective_now)
+
+        filtered_total = len(ordered)
+        page = ordered[start : start + cap]
+        remaining = max(0, filtered_total - (start + len(page)))
+        return {
+            "songs": page,
+            "source": "dusty_gems",
+            "degraded": False,
+            "reason": "",
+            "total_candidates": total,
+            "filtered_total": filtered_total,
+            "offset": start,
+            "limit": cap,
+            "remaining_count": remaining,
+            "has_more": remaining > 0,
+            "exhausted": remaining == 0,
+            "counts": counts,
+            "playlists": playlists,
+        }
 
     def smart_radio(self, account_id="local", *, radio_session_id="", request_id="", commit=None, superseded_request_ids=(), **options):
         with self.account_lock(account_id):

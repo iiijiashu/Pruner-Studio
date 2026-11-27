@@ -111,16 +111,29 @@ if (/--border-control/.test(searchTriggerBlock) || !/--bg-well/.test(searchTrigg
   errors++;
 }
 
-// VAC-05: Scrollbarless Dusty Gems carousel + stepper buttons
+// VAC-05: Dusty Gems 2-row 8-card Showcase Grid, dedicated #view-dusty & Smart Radio vinyl console
 const discoverCss = readCss('discover.css');
-if (!/\.discover-dusty-strip\s*\{[^}]*scrollbar-width:\s*none/s.test(discoverCss)
-  || !/\.discover-dusty-strip::-webkit-scrollbar\s*\{\s*display:\s*none;\s*\}/.test(discoverCss)) {
-  console.error('[VAC-05_CAROUSEL] .discover-dusty-strip must hide native scrollbars cleanly');
+const mainCss = readCss('main.css');
+const discoverJs = fs.readFileSync(path.join('web', 'js', 'discover.js'), 'utf8');
+if (!/\.discover-dusty-grid\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/s.test(discoverCss)) {
+  console.error('[VAC-05_DUSTY_GRID] .discover-dusty-grid must render as a responsive 4-column showcase grid');
   errors++;
 }
-if (!indexHtml.includes('id="discover-dusty-prev"') || !indexHtml.includes('id="discover-dusty-next"')) {
-  console.error('[VAC-05_STEPPERS] #discover-dusty-prev and #discover-dusty-next must exist in web/index.html');
+for (const reqId of ['discover-dusty-prev', 'discover-dusty-refresh', 'discover-dusty-view-all', 'view-dusty', 'discover-radio-stage', 'discover-radio-next-btn']) {
+  if (!indexHtml.includes(`id="${reqId}"`)) {
+    console.error(`[VAC-05_DISCOVER_HOOK] #${reqId} must exist in web/index.html`);
+    errors++;
+  }
+}
+if (!mainCss.includes('./dusty_view.css')) {
+  console.error('[VAC-05_DUSTY_CSS] web/css/main.css must import ./dusty_view.css');
   errors++;
+}
+for (const legacyText of ['重新编排心动电台', '想听多少新歌']) {
+  if (indexHtml.includes(legacyText) || discoverJs.includes(legacyText)) {
+    console.error(`[VAC-05_LEGACY_RADIO_COPY] Obsolete copy '${legacyText}' must not remain in Discover Smart Radio`);
+    errors++;
+  }
 }
 
 // VAC-06: Rebalanced player bar height & non-overlapping inline queue pill

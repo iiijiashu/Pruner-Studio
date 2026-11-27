@@ -14,6 +14,7 @@ import { auth } from './auth.js';
 import { player } from './player.js';
 import { stageManager } from './stage.js';
 import { discoverManager } from './discover.js';
+import { dustyView } from './dusty_view.js';
 import { deckManager } from './deck.js';
 import { catalogManager } from './catalog.js';
 import { rulesManager } from './rules.js';
@@ -52,6 +53,7 @@ export class App {
       onNotInterested: notInterestedHandler,
     });
     discoverManager.init('view-discover', { onAddToPlaylist: addToPlaylistHandler });
+    dustyView.init({ onAddToPlaylist: addToPlaylistHandler });
     deckManager.init('deck-workspace-container');
     catalogManager.init('catalog-view-panel', { onAddToPlaylist: addToPlaylistHandler });
     rulesManager.init('rules-list-container');
@@ -93,6 +95,7 @@ export class App {
 
     state.on('auth:success', async () => {
       discoverManager.resetDiscovery();
+      dustyView.reset();
       this.invalidateInitialDataLoads();
       deckManager.resetSessionSnapshot();
       await Promise.all([player.restorePlaybackSession(), this.loadInitialData()]);
@@ -104,6 +107,7 @@ export class App {
 
     state.on('auth:offline', async ({ accountId, openChannels } = {}) => {
       discoverManager.resetDiscovery();
+      dustyView.reset();
       this.invalidateInitialDataLoads();
       const generation = this.initialDataGeneration;
       state.set({catalog: [], playlists: [], cloudSongs: [], catalogSelectedIds: new Set(), likedSongIds: new Set(), likedTrackKeys: new Set()});
@@ -121,6 +125,7 @@ export class App {
 
     state.on('auth:logout', () => {
       discoverManager.resetDiscovery();
+      dustyView.reset();
       this.invalidateInitialDataLoads();
       state.cancelAllCommits();
       player.stopAndReset();
@@ -169,7 +174,7 @@ export class App {
       const detail = e.detail;
       if (detail && typeof detail === 'object') {
         if (detail.tab === 'cloud' && state.get('isStageOpen')) stageManager.close();
-        this.switchTab(detail.tab);
+        this.switchTab(detail.tab, detail);
         if (detail.tab === 'catalog' && detail.query !== undefined) {
           const input = document.getElementById('catalog-search-input');
           if (input) input.value = detail.query;
@@ -508,15 +513,15 @@ export class App {
     });
   }
 
-  switchTab(tabName) {
+  switchTab(tabName, options = null) {
     if (this.currentTab === 'deck' && tabName !== 'deck') deckManager.detachDrag?.();
-    const validTabs = ['discover', 'catalog', 'history', 'deck', 'cloud', 'search'];
+    const validTabs = ['discover', 'dusty', 'catalog', 'history', 'deck', 'cloud', 'search'];
     const target = validTabs.includes(tabName) ? tabName : 'discover';
     this.currentTab = target;
     state.set({ activeTab: target });
 
     document.querySelectorAll('.nav-tab-btn').forEach(btn => {
-      const isMatch = btn.dataset.tab === target;
+      const isMatch = btn.dataset.tab === target || (target === 'dusty' && btn.dataset.tab === 'discover');
       btn.classList.toggle('active', isMatch);
       btn.setAttribute('aria-selected', isMatch ? 'true' : 'false');
     });
@@ -534,6 +539,8 @@ export class App {
     if (target === 'discover') {
       discoverManager.ensureLoaded(false).catch(() => {});
       discoverManager.render();
+    } else if (target === 'dusty') {
+      dustyView.open(options && typeof options === 'object' ? options : {});
     } else if (target === 'history') {
       historyManager.load();
     } else if (target === 'deck') {
@@ -571,7 +578,7 @@ export class App {
       });
     }
     if (heartbeatBtn) {
-      heartbeatBtn.addEventListener('click', () => discoverManager.startHeartbeatMode());
+      heartbeatBtn.addEventListener('click', () => discoverManager.handleSmartRadioPrimaryAction());
     }
   }
 

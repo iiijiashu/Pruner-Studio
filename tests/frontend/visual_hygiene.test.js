@@ -101,7 +101,7 @@ function testHtmlToolbarAndCrossViewStructure() {
   const componentsCss = read('web/css/components.css');
 
   // VAC-03: Strict toolbar weight budget (<= 1 primary, <= 1 secondary) on Daily Recommend & Dusty Gems
-  const dustyActions = indexHtml.split('id="discover-dusty-section"')[1].split('class="discover-section-actions">')[1].split('id="discover-dusty-carousel"')[0];
+  const dustyActions = indexHtml.split('id="discover-dusty-section"')[1].split('class="discover-section-actions">')[1].split('id="discover-dusty-grid"')[0];
   const dailyActions = indexHtml.split('<!-- Daily Recommend 30 Tracks -->')[1].split('class="discover-section-actions">')[1].split('id="discover-extra"')[0];
   for (const [label, html] of [['Dusty Gems', dustyActions], ['Daily Recommend', dailyActions]]) {
     const primaryCount = (html.match(/\bbtn-primary\b/g) || []).length;
@@ -137,20 +137,28 @@ function testHtmlToolbarAndCrossViewStructure() {
   assert.match(componentsCss, /\.header-search-trigger\s*\{[^}]*background-color:\s*var\(--bg-well\)[^}]*border:\s*1px solid var\(--border-subtle\)/s);
 }
 
-function testDiscoverNoiseSuppressionAndCarouselSteppers() {
+async function testDiscoverNoiseSuppressionAndCarouselSteppers() {
   const dom = createMockDom();
   const origDoc = globalThis.document;
+  const origWin = globalThis.window;
+  const origCustomEvent = globalThis.CustomEvent;
   const origRaf = globalThis.requestAnimationFrame;
+  const origGetDusty = api.getDustyGems;
+  const origGetInsights = api.getInsights;
   const savedState = {
     dailyRecommend: state.get('dailyRecommend'),
     dailyRecommendMeta: state.get('dailyRecommendMeta'),
     dustyGems: state.get('dustyGems'),
+    listeningInsights: state.get('listeningInsights'),
     likedSongIds: state.get('likedSongIds'),
     offlineMode: state.get('offlineMode'),
   };
 
   try {
+    const dispatched = [];
     globalThis.document = dom.mockDoc;
+    globalThis.CustomEvent = class MockCustomEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } };
+    globalThis.window = { dispatchEvent: (ev) => dispatched.push(ev) };
     globalThis.requestAnimationFrame = (fn) => { fn(); return 1; };
 
     // VAC-04: Suppress generic 网易云每日推荐 / 每日推荐 badges, preserve distinct reasons, icon-only + .sr-only 不再推荐
@@ -182,55 +190,68 @@ function testDiscoverNoiseSuppressionAndCarouselSteppers() {
       assert.ok(srLabel && srLabel.textContent === '不再推荐', 'Ban button must keep accessible .sr-only label');
     }
 
-    // VAC-05: Dusty Gems carousel steppers toggle disabled & edge fade flags honestly at bounds
-    const carousel = dom.registerId('discover-dusty-carousel');
-    const strip = dom.registerId('discover-dusty-grid');
+    // VAC-05: Dusty Gems 2-row 8-card Showcase Grid with reversible 上一批 / 换一批 history & 查看全部 -> #view-dusty
+    const grid = dom.registerId('discover-dusty-grid');
+    const subtitle = dom.registerId('discover-dusty-subtitle', 'span');
     const prevBtn = dom.registerId('discover-dusty-prev', 'button');
-    const nextBtn = dom.registerId('discover-dusty-next', 'button');
+    const refreshBtn = dom.registerId('discover-dusty-refresh', 'button');
+    const viewAllBtn = dom.registerId('discover-dusty-view-all', 'button');
     dom.registerId('discover-dusty-play-all', 'button');
 
-    strip.scrollLeft = 0;
-    strip.scrollWidth = 1500;
-    strip.clientWidth = 800;
-    strip.scrollBy = ({ left }) => {
-      strip.scrollLeft = Math.max(0, Math.min(strip.scrollWidth - strip.clientWidth, strip.scrollLeft + left));
+    discoverManager.resetDiscovery();
+    discoverManager.bindSmartRadioControls();
+    let fetchCalls = 0;
+    api.getInsights = async () => ({ ok: true, data: { dusty_gems_count: 1104 } });
+    api.getDustyGems = async (opts) => {
+      fetchCalls += 1;
+      assert.equal(opts.limit, 8, 'Discover showcase must request 8 dusty gems per batch');
+      const base = fetchCalls * 100;
+      return {
+        ok: true,
+        data: {
+          total_candidates: 1104,
+          exhausted: false,
+          songs: Array.from({ length: 8 }, (_, i) => ({
+            id: base + i,
+            title: `Gem Batch ${fetchCalls} #${i + 1}`,
+            artists: ['Singer'],
+            recommend_reason: `${90 + i} 天未听 · 曾播 4 次`,
+          })),
+        },
+      };
     };
 
-    discoverManager.bindDustyCarouselControls();
-    state.set({
-      dustyGems: Array.from({ length: 6 }, (_, i) => ({
-        id: 200 + i,
-        title: `Gem ${i + 1}`,
-        artists: ['Singer'],
-        recommend_reason: '沉睡宝藏 · 尚未播放',
-      })),
-    });
-    discoverManager.renderDustyGems();
+    await discoverManager.loadDustyGems({ recordHistory: false });
+    assert.equal(grid.querySelectorAll('.discover-dusty-card').length, 8, 'Showcase must render 8 cards in 2-row grid');
+    assert.equal(prevBtn.disabled, true, 'At initial batch prev must be disabled');
+    assert.ok(subtitle.textContent.includes('1,104'), 'Showcase subtitle must display real dusty total');
+    assert.ok(viewAllBtn.textContent.includes('1,104'), 'View-all button must reflect real dusty total');
 
-    assert.equal(prevBtn.disabled, true, 'At left edge prev must be disabled');
-    assert.equal(nextBtn.disabled, false, 'With overflow next must be enabled');
-    assert.equal(carousel.dataset.canScrollLeft, 'false');
-    assert.equal(carousel.dataset.canScrollRight, 'true');
+    // Advance to batch 2 via 换一批
+    await discoverManager.showNextDustyBatch();
+    assert.equal(fetchCalls, 2);
+    assert.equal(prevBtn.disabled, false, 'After advancing a batch 上一批 must be enabled');
+    assert.equal(state.get('dustyGems')[0].title, 'Gem Batch 2 #1');
 
-    nextBtn.click();
-    assert.ok(strip.scrollLeft > 0, 'Clicking next must scroll strip right');
-    assert.equal(prevBtn.disabled, false, 'After scrolling right prev must be enabled');
-    assert.equal(carousel.dataset.canScrollLeft, 'true');
-
-    // Scroll to far right bound
-    nextBtn.click();
-    assert.equal(strip.scrollLeft, 700);
-    assert.equal(nextBtn.disabled, true, 'At right edge next must be disabled');
-    assert.equal(carousel.dataset.canScrollRight, 'false');
-
-    // Scroll back to start
+    // Step back to batch 1 via 上一批
     prevBtn.click();
-    prevBtn.click();
-    assert.equal(strip.scrollLeft, 0);
-    assert.equal(prevBtn.disabled, true);
-    assert.equal(nextBtn.disabled, false);
+    assert.equal(prevBtn.disabled, true, 'After returning to batch 1 上一批 must disable again');
+    assert.equal(state.get('dustyGems')[0].title, 'Gem Batch 1 #1');
+
+    // Step forward again via 换一批 -> uses forward stack without redundant API fetch
+    await discoverManager.showNextDustyBatch();
+    assert.equal(fetchCalls, 2, 'Forwarding back to previously fetched batch must reuse forward history');
+    assert.equal(state.get('dustyGems')[0].title, 'Gem Batch 2 #1');
+
+    // Clicking 查看全部 dispatches { tab: 'dusty' }
+    viewAllBtn.click();
+    assert.deepEqual(dispatched.map(e => e.detail), [{ tab: 'dusty' }], '查看全部 must open dedicated #view-dusty explorer');
   } finally {
+    api.getDustyGems = origGetDusty;
+    api.getInsights = origGetInsights;
     globalThis.document = origDoc;
+    globalThis.window = origWin;
+    globalThis.CustomEvent = origCustomEvent;
     globalThis.requestAnimationFrame = origRaf;
     state.set(savedState);
   }
@@ -267,11 +288,18 @@ async function testRound2ResponsiveAndUiContracts() {
   const stageRightCol = indexHtml.split('<div class="stage-right-column">')[1]?.split('</div>\n      </div>\n    </div>')[0] || '';
   assert.equal(stageRightCol.includes('lyrics-copy-actions'), false, 'Stage right column must not show redundant floating copy bar above lyrics');
 
-  // Phase B: 0%-100% Smart Radio slider + Braun SVG Analog Radio Tuner Dial + zero-blur switch + clickable insights
+  // Phase B: Vinyl Sleeve & Real Album Cover Smart Radio + Precision Tuner Rail + Intuitive Play/Pause/Next + Dedicated #view-dusty
   assert.ok(indexHtml.includes('id="discover-explore-slider"') && indexHtml.includes('min="0" max="100"'), 'Explore slider must cover full 0..100 range');
-  assert.ok(indexHtml.includes('<svg id="discover-acoustic-orb"'), 'Smart Radio hero must use pure-vector SVG Braun Analog Radio Tuner Dial');
-  assert.equal(indexHtml.includes('<canvas id="discover-acoustic-orb"'), false, 'Legacy cold-gradient canvas orb must be removed');
-  assert.ok(indexHtml.includes('id="discover-tuner-needle"') && indexHtml.includes('id="discover-tuner-arc"') && indexHtml.includes('id="discover-tuner-value"'), 'Tuner dial must expose needle, arc, and monospace FM readout');
+  assert.ok(indexHtml.includes('id="discover-radio-stage"') && indexHtml.includes('class="discover-vinyl-disc"'), 'Smart Radio hero must render Vinyl Sleeve & Real Album Cover Stage');
+  assert.ok(indexHtml.includes('id="discover-radio-next-btn"') && indexHtml.includes('id="discover-radio-live-feedback"'), 'Smart Radio hero must expose Next button and live tuning feedback');
+  assert.ok(indexHtml.includes('id="view-dusty"'), 'index.html must mount dedicated #view-dusty explorer panel');
+  for (const preset of [0, 30, 55, 85]) {
+    assert.ok(indexHtml.includes(`data-radio-preset="${preset}"`), `Tuner rail must expose clickable preset stop ${preset}%`);
+  }
+  assert.equal(indexHtml.includes('id="discover-acoustic-orb"'), false, 'Legacy dial/orb element must be removed');
+  assert.equal(indexHtml.includes('id="discover-tuner-needle"'), false, 'Legacy speedometer needle must be removed');
+  assert.equal(indexHtml.includes('重新编排心动电台'), false, 'Confusing 重新编排心动电台 copy must be eliminated');
+  assert.equal(indexHtml.includes('想听多少新歌'), false, 'Legacy form heading 想听多少新歌 must be removed');
   assert.equal(/@keyframes\s+viewEnter\b/.test(baseCss), false, 'base.css must not animate full view opacity on tab switch / cold boot');
   assert.equal(discoverManager.formatExploreLabel(0), '0% · 纯熟歌回味');
   assert.equal(discoverManager.formatExploreLabel(20), '20% · 偏爱熟歌');
@@ -281,16 +309,16 @@ async function testRound2ResponsiveAndUiContracts() {
   const prevSettings = state.get('settings');
   try {
     state.updateSettings({ visual_mode: 'quiet_eco', gpu_performance_mode: 'balanced', game_mode: false });
-    assert.equal(discoverManager.shouldPauseOrb(), true, 'Tuner dial kinetic meter must pause in quiet_eco');
+    assert.equal(discoverManager.shouldPauseOrb(), true, 'Vinyl motion must pause in quiet_eco');
     state.updateSettings({ visual_mode: 'soft_dynamic', gpu_performance_mode: 'eco', game_mode: false });
-    assert.equal(discoverManager.shouldPauseOrb(), true, 'Tuner dial kinetic meter must pause in gpu eco mode');
+    assert.equal(discoverManager.shouldPauseOrb(), true, 'Vinyl motion must pause in gpu eco mode');
     state.updateSettings({ visual_mode: 'soft_dynamic', gpu_performance_mode: 'balanced', game_mode: true });
-    assert.equal(discoverManager.shouldPauseOrb(), true, 'Tuner dial kinetic meter must pause in game_mode');
+    assert.equal(discoverManager.shouldPauseOrb(), true, 'Vinyl motion must pause in game_mode');
   } finally {
     state.set({ settings: prevSettings });
   }
 
-  // Verify clickable Discover insights bar & Braun tuner dial live slider sync
+  // Verify clickable Discover insights bar (#view-dusty dispatch), Smart Radio state machine & api.getDustyGems params
   {
     const insightDom = createMockDom();
     insightDom.mockDoc.createElementNS = (_ns, tag) => insightDom.makeEl(tag);
@@ -298,6 +326,14 @@ async function testRound2ResponsiveAndUiContracts() {
     const prevWin = globalThis.window;
     const prevNode = globalThis.Node;
     const prevCustomEvent = globalThis.CustomEvent;
+    const origReq = api.request;
+    const savedRadioState = {
+      playMode: state.get('playMode'),
+      isPlaying: state.get('isPlaying'),
+      currentPlayingSong: state.get('currentPlayingSong'),
+      radioExhausted: state.get('radioExhausted'),
+      playQueue: state.get('playQueue'),
+    };
     const dispatched = [];
     try {
       globalThis.document = insightDom.mockDoc;
@@ -307,19 +343,97 @@ async function testRound2ResponsiveAndUiContracts() {
         dispatchEvent: (ev) => dispatched.push(ev),
       };
       const bar = insightDom.registerId('discover-insights-bar', 'div');
-      const dustySection = insightDom.registerId('discover-dusty-section', 'div');
-      let scrolled = false;
-      dustySection.scrollIntoView = () => { scrolled = true; };
+      const stage = insightDom.registerId('discover-radio-stage', 'button');
+      insightDom.registerId('discover-radio-cover-host', 'span');
+      const statusPill = insightDom.registerId('discover-radio-status-pill', 'div');
+      const statusText = insightDom.makeEl('span');
+      statusText.className = 'radio-status-text';
+      statusPill.appendChild(statusText);
+      const headline = insightDom.registerId('discover-radio-headline', 'div');
+      const subline = insightDom.registerId('discover-radio-subline', 'span');
+      const heartbeatBtn = insightDom.registerId('discover-heartbeat-btn', 'button');
+      const nextBtn = insightDom.registerId('discover-radio-next-btn', 'button');
+      const liveFeedback = insightDom.registerId('discover-radio-live-feedback', 'div');
+      const ratioLabel = insightDom.registerId('discover-explore-ratio-label', 'span');
+      const presetBtns = [0, 30, 55, 85].map((p) => {
+        const b = insightDom.makeEl('button');
+        b.className = 'discover-tuner-preset';
+        b.dataset.radioPreset = String(p);
+        return b;
+      });
+      insightDom.mockDoc.querySelectorAll = (sel) => (sel === '.discover-tuner-preset' ? presetBtns : []);
 
-      const needle = insightDom.registerId('discover-tuner-needle', 'g');
-      insightDom.registerId('discover-tuner-arc', 'path');
-      const readout = insightDom.registerId('discover-tuner-value', 'text');
-      insightDom.registerId('discover-tuner-stage', 'div');
+      // Continuous default 40% must NOT falsely highlight 偏熟 30%; exact preset 55% highlights 均衡 55%
+      state.updateSettings({ smart_radio_explore_ratio: 0.4 });
+      state.set({ playMode: 'order', isPlaying: false, currentPlayingSong: null, radioExhausted: false });
+      discoverManager.renderHeroCards();
+      assert.equal(ratioLabel.textContent, '40% 新声');
+      assert.equal(presetBtns.some((b) => b.classList.contains('is-active')), false, 'Default 40% must not falsely highlight 30% preset');
 
-      discoverManager.renderAcousticOrbFrame(80);
-      assert.equal(readout.textContent, 'FM · 80%', 'Tuner dial readout must mirror 80%');
-      assert.equal(needle.attributes.transform, 'rotate(81.0 80 80)', 'Tuner needle angle must rotate to +81 deg at 80%');
+      state.updateSettings({ smart_radio_explore_ratio: 0.55 });
+      discoverManager.renderHeroCards();
+      assert.equal(presetBtns.filter((b) => b.classList.contains('is-active')).map((b) => b.dataset.radioPreset).join(','), '55', 'Preset 55% must highlight only 均衡 55%');
 
+      // Idle state at 80%
+      state.updateSettings({ smart_radio_explore_ratio: 0.8 });
+      state.set({ playMode: 'order', isPlaying: false, currentPlayingSong: null, radioExhausted: false });
+      discoverManager.renderHeroCards();
+      assert.equal(ratioLabel.textContent, '80% 新声');
+      assert.equal(heartbeatBtn.querySelector('.btn-label').textContent, '开启电台');
+      assert.equal(nextBtn.hidden, true);
+      assert.equal(stage.dataset.radioPlaying, 'false');
+
+      // Active & Playing state
+      state.set({
+        playMode: 'smart_radio',
+        isPlaying: true,
+        currentPlayingSong: { id: 901, title: '修炼爱情', artists: ['林俊杰'], cover_url: 'https://p1.music.126.net/jj.jpg', recommend_reason: '沉睡宝藏' },
+        playQueue: [{ id: 901, title: '修炼爱情' }, { id: 902, title: '江南' }],
+        radioExhausted: false,
+      });
+      discoverManager.renderHeroCards();
+      assert.equal(headline.textContent, '修炼爱情');
+      assert.ok(subline.textContent.includes('林俊杰') && subline.textContent.includes('沉睡宝藏'));
+      assert.equal(heartbeatBtn.querySelector('.btn-label').textContent, '暂停电台');
+      assert.equal(nextBtn.hidden, false);
+      assert.equal(stage.dataset.radioPlaying, 'true');
+      assert.equal(statusText.textContent, '正在播放');
+
+      // Active & Paused + Live Tuning feedback
+      state.set({ isPlaying: false });
+      discoverManager.liveTuneFeedbackVisible = true;
+      discoverManager.liveTuneRecentNotice = true;
+      discoverManager.renderHeroCards();
+      assert.equal(heartbeatBtn.querySelector('.btn-label').textContent, '继续电台');
+      assert.equal(nextBtn.hidden, false);
+      assert.equal(liveFeedback.hidden, false);
+      assert.equal(statusText.textContent, '已按新口味更新');
+
+      // Exhausted state
+      state.set({ radioExhausted: true });
+      discoverManager.renderHeroCards();
+      assert.equal(heartbeatBtn.querySelector('.btn-label').textContent, '开启新一轮');
+      assert.equal(nextBtn.hidden, true);
+      discoverManager.liveTuneFeedbackVisible = false;
+      discoverManager.liveTuneRecentNotice = false;
+
+      // Extended api.getDustyGems parameter serialization
+      const capturedUrls = [];
+      api.request = async (url) => { capturedUrls.push(url); return { ok: true, data: {} }; };
+      await api.getDustyGems({ limit: 48, offset: 48, kind: 'forgotten', playlist: '我喜欢的音乐', q: '林俊杰', sort: 'oldest', seed: 777, excludeIds: [1, 2], excludeKeys: ['netease:1'] });
+      await api.getDustyGems({ limit: 8, offset: 0, kind: 'all', playlist: '', q: '', sort: '' });
+      const u1 = new URL(capturedUrls[0], 'http://localhost');
+      assert.equal(u1.searchParams.get('limit'), '48');
+      assert.equal(u1.searchParams.get('offset'), '48');
+      assert.equal(u1.searchParams.get('kind'), 'forgotten');
+      assert.equal(u1.searchParams.get('playlist'), '我喜欢的音乐');
+      assert.equal(u1.searchParams.get('q'), '林俊杰');
+      assert.equal(u1.searchParams.get('sort'), 'oldest');
+      assert.equal(u1.searchParams.get('seed'), '777');
+      const u2 = new URL(capturedUrls[1], 'http://localhost');
+      assert.deepEqual([...u2.searchParams.keys()], ['limit'], 'Empty/default dusty params must be omitted');
+
+      // Clickable Discover insights bar (沉睡宝藏 now navigates to { tab: 'dusty' })
       state.set({
         listeningInsights: {
           catalog_track_count: 1122,
@@ -343,18 +457,14 @@ async function testRound2ResponsiveAndUiContracts() {
       const chips = bar.querySelectorAll('.discover-insight-artist-chip');
       assert.equal(chips.length, 3, 'Top artists block must render 3 individual clickable artist chips');
       chips[1].click();
-      assert.equal(scrolled, true, 'Clicking 沉睡宝藏 insight must scroll to dusty section');
-      assert.equal(dustySection.classList.contains('is-spotlight'), true, 'Clicking 沉睡宝藏 must spotlight section');
       assert.deepEqual(
         dispatched.map((e) => e.detail),
-        ['history', 'catalog', { tab: 'search', query: '宇多田ヒカル' }],
-        'Clicking insights and artist chips must dispatch exact navigation targets',
+        ['history', { tab: 'dusty' }, 'catalog', { tab: 'search', query: '宇多田ヒカル' }],
+        'Clicking insights and artist chips must dispatch exact navigation targets including dedicated #view-dusty',
       );
     } finally {
-      if (discoverManager.dustySpotlightTimer) {
-        clearTimeout(discoverManager.dustySpotlightTimer);
-        discoverManager.dustySpotlightTimer = null;
-      }
+      api.request = origReq;
+      state.set(savedRadioState);
       globalThis.document = prevDoc;
       globalThis.window = prevWin;
       globalThis.Node = prevNode;
@@ -428,7 +538,7 @@ async function testRound2ResponsiveAndUiContracts() {
 export async function runVisualHygieneTests() {
   testOpaqueChromeAndPaletteContracts();
   testHtmlToolbarAndCrossViewStructure();
-  testDiscoverNoiseSuppressionAndCarouselSteppers();
+  await testDiscoverNoiseSuppressionAndCarouselSteppers();
   await testRound2ResponsiveAndUiContracts();
   console.log('✓ Phase 3 & Round 2 visual hygiene, 5-ratio responsive & UI contract tests passed!');
 }

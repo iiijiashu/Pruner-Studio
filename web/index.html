@@ -156,67 +156,90 @@
                 </div>
               </div>
 
-              <!-- True Heartbeat Smart Radio Card (0%-100% Continuous Exploration + Living Acoustic Orb) -->
+              <!-- Smart Radio Card: Vinyl Sleeve & Real Album Cover Stage + Unified Precision Tuner -->
               <div class="discover-hero-card discover-action-card">
-                <div class="discover-card-kicker">
-                  <span data-icon-slot="sparkles" data-icon-size="14"></span>
-                  <span>心动电台</span>
+                <div class="discover-card-header-row">
+                  <div class="discover-card-kicker">
+                    <span data-icon-slot="sparkles" data-icon-size="14"></span>
+                    <span>心动电台</span>
+                  </div>
+                  <div id="discover-radio-status-pill" class="discover-radio-status-pill" data-state="idle">
+                    <span class="radio-status-dot" aria-hidden="true"></span>
+                    <span class="radio-live-eq" aria-hidden="true">
+                      <span></span><span></span><span></span>
+                    </span>
+                    <span class="radio-status-text">待机</span>
+                  </div>
                 </div>
                 <div class="discover-radio-body">
-                  <div id="discover-tuner-stage" class="discover-orb-stage" role="slider" tabindex="0" aria-label="心动电台模拟调频表盘" aria-valuemin="0" aria-valuemax="100" aria-valuenow="40" title="拖动或点击表盘调节熟歌与新声比例">
-                    <svg id="discover-acoustic-orb" class="discover-tuner-dial" viewBox="0 0 160 160" width="144" height="144" shape-rendering="geometricPrecision" data-radio-playing="false" data-orb-paused="false" aria-hidden="true">
-                      <defs>
-                        <linearGradient id="discover-tuner-face-grad" x1="18%" y1="12%" x2="84%" y2="88%">
-                          <stop offset="0%" stop-color="var(--tuner-face-start)"></stop>
-                          <stop offset="100%" stop-color="var(--tuner-face-end)"></stop>
-                        </linearGradient>
-                      </defs>
-                      <circle class="discover-tuner-face" cx="80" cy="80" r="76" fill="url(#discover-tuner-face-grad)"></circle>
-                      <circle class="discover-tuner-inner-ring" cx="80" cy="80" r="70"></circle>
-                      <path class="discover-tuner-track" d="M 41.1 118.9 A 55 55 0 1 1 118.9 118.9"></path>
-                      <path id="discover-tuner-arc" class="discover-tuner-arc" d="M 41.1 118.9 A 55 55 0 1 1 118.9 118.9" stroke-dasharray="259.18" stroke-dashoffset="155.51"></path>
-                      <g id="discover-tuner-ticks"></g>
-                      <text class="discover-tuner-scale-label" x="48" y="106">0</text>
-                      <text class="discover-tuner-scale-label" x="80" y="34">50</text>
-                      <text class="discover-tuner-scale-label" x="112" y="106">100</text>
-                      <g id="discover-tuner-eq" aria-hidden="true">
-                        <rect class="discover-tuner-eq-bar" x="69" y="51" width="2.2" height="8" rx="1"></rect>
-                        <rect class="discover-tuner-eq-bar" x="74" y="48" width="2.2" height="11" rx="1"></rect>
-                        <rect class="discover-tuner-eq-bar" x="79" y="46" width="2.2" height="13" rx="1"></rect>
-                        <rect class="discover-tuner-eq-bar" x="84" y="49" width="2.2" height="10" rx="1"></rect>
-                        <rect class="discover-tuner-eq-bar" x="89" y="52" width="2.2" height="7" rx="1"></rect>
-                      </g>
-                      <g id="discover-tuner-needle" class="discover-tuner-needle-group" transform="rotate(-27 80 80)">
-                        <polygon class="discover-tuner-needle-tail" points="78.5,80 81.5,80 80.7,94 79.3,94"></polygon>
-                        <polygon class="discover-tuner-needle-main" points="78.3,80 81.7,80 80.5,25 79.5,25"></polygon>
-                      </g>
-                      <circle class="discover-tuner-hub" cx="80" cy="80" r="7.5"></circle>
-                      <circle id="discover-tuner-led" class="discover-tuner-led" cx="80" cy="80" r="2.8"></circle>
-                      <rect class="discover-tuner-plate" x="45" y="114" width="70" height="20" rx="10"></rect>
-                      <text id="discover-tuner-value" class="discover-tuner-readout" x="80" y="124.5">FM · 40%</text>
-                    </svg>
-                  </div>
+                  <button type="button" id="discover-radio-stage" class="discover-radio-stage" data-radio-playing="false" data-orb-paused="false" aria-label="开启或暂停心动电台" title="点击开启或暂停心动电台">
+                    <span class="discover-vinyl-stack discover-vinyl-stack-2" aria-hidden="true"></span>
+                    <span class="discover-vinyl-stack discover-vinyl-stack-1" aria-hidden="true"></span>
+                    <span class="discover-vinyl-disc-wrap" aria-hidden="true">
+                      <svg class="discover-vinyl-disc" viewBox="0 0 120 120" width="118" height="118" shape-rendering="geometricPrecision" aria-hidden="true">
+                        <circle class="vinyl-disc-body" cx="60" cy="60" r="57"></circle>
+                        <circle class="vinyl-disc-groove" cx="60" cy="60" r="50"></circle>
+                        <circle class="vinyl-disc-groove" cx="60" cy="60" r="43"></circle>
+                        <circle class="vinyl-disc-groove" cx="60" cy="60" r="36"></circle>
+                        <circle class="vinyl-disc-groove" cx="60" cy="60" r="29"></circle>
+                        <path class="vinyl-disc-sheen" d="M 60 60 L 18 22 A 57 57 0 0 1 56 3 Z"></path>
+                        <path class="vinyl-disc-sheen" d="M 60 60 L 102 98 A 57 57 0 0 1 64 117 Z"></path>
+                        <circle class="vinyl-disc-label" cx="60" cy="60" r="19"></circle>
+                        <circle class="vinyl-disc-label-ring" cx="60" cy="60" r="14"></circle>
+                        <circle class="vinyl-disc-spindle" cx="60" cy="60" r="4"></circle>
+                      </svg>
+                    </span>
+                    <span class="discover-vinyl-sleeve">
+                      <span id="discover-radio-cover-host" class="discover-radio-cover-host"></span>
+                      <span class="discover-vinyl-cue" aria-hidden="true">
+                        <span id="discover-radio-stage-cue-icon" data-icon-slot="play" data-icon-size="14"></span>
+                      </span>
+                    </span>
+                  </button>
+
                   <div class="discover-radio-controls-col">
-                    <div class="discover-action-title">想听多少新歌？</div>
-                    <div class="discover-explore-control">
-                      <div class="discover-explore-header">
-                        <span>熟歌</span>
-                        <span id="discover-explore-ratio-label" class="discover-explore-value">40% · 熟歌与新声均衡</span>
-                        <span>新声</span>
-                      </div>
-                      <input type="range" id="discover-explore-slider" class="discover-explore-slider" min="0" max="100" step="1" value="40" aria-label="熟歌与探索比例">
-                      <div class="discover-explore-ticks" aria-hidden="true">
-                        <span>0%</span>
-                        <span>50%</span>
-                        <span>100%</span>
+                    <div class="discover-radio-headline-block">
+                      <div id="discover-radio-headline" class="discover-radio-headline">熟新均衡 · 经典与新声交织</div>
+                      <div class="discover-radio-subline-row">
+                        <span id="discover-radio-subline" class="discover-radio-subline">约 60% 曲库熟歌 · 40% 风格新声</span>
+                        <button type="button" id="discover-radio-queue-btn" class="discover-radio-queue-link" hidden>队列</button>
                       </div>
                     </div>
-                    <div id="discover-smart-radio-tags" class="discover-radio-tags"></div>
+
+                    <div id="discover-radio-blend-bar" class="discover-blend-bar" role="presentation" title="熟歌 60% / 新声 40%">
+                      <span id="discover-blend-familiar" class="discover-blend-familiar" style="width: 60%;"></span>
+                      <span id="discover-blend-explore" class="discover-blend-explore" style="width: 40%;"></span>
+                    </div>
+
+                    <div id="discover-tuner-rail" class="discover-tuner-rail">
+                      <div class="discover-tuner-rail-header">
+                        <span class="discover-tuner-rail-title">熟歌与新声配比</span>
+                        <span id="discover-explore-ratio-label" class="discover-explore-value numeral-mono">40% 新声</span>
+                      </div>
+                      <input type="range" id="discover-explore-slider" class="discover-explore-slider" min="0" max="100" step="1" value="40" aria-label="熟歌与新声配比">
+                      <div class="discover-tuner-presets" role="group" aria-label="电台口味快捷档位">
+                        <button type="button" class="discover-tuner-preset" data-radio-preset="0" aria-pressed="false">熟歌 0%</button>
+                        <button type="button" class="discover-tuner-preset" data-radio-preset="30" aria-pressed="false">偏熟 30%</button>
+                        <button type="button" class="discover-tuner-preset" data-radio-preset="55" aria-pressed="false">均衡 55%</button>
+                        <button type="button" class="discover-tuner-preset" data-radio-preset="85" aria-pressed="false">新声 85%</button>
+                      </div>
+                    </div>
+
                     <div class="discover-action-footer">
-                      <button id="discover-heartbeat-btn" class="btn btn-primary btn-sm">
-                        <span data-icon-slot="play" data-icon-size="14"></span>
-                        <span class="btn-label">开启心动电台</span>
-                      </button>
+                      <div class="discover-radio-btn-group">
+                        <button type="button" id="discover-heartbeat-btn" class="btn btn-primary btn-sm">
+                          <span data-icon-slot="play" data-icon-size="14"></span>
+                          <span class="btn-label">开启电台</span>
+                        </button>
+                        <button type="button" id="discover-radio-next-btn" class="btn btn-secondary btn-sm" hidden>
+                          <span data-icon-slot="skip-next" data-icon-size="14"></span>
+                          <span class="btn-label">下一首</span>
+                        </button>
+                      </div>
+                      <div id="discover-radio-live-feedback" class="discover-radio-live-feedback" hidden>
+                        <span class="discover-radio-live-note">后续队列已更新</span>
+                        <button type="button" id="discover-radio-try-next-btn" class="btn btn-ghost btn-sm discover-radio-try-next">切一首试试</button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -228,37 +251,34 @@
               <!-- Populated by discover.js -->
             </div>
 
-            <!-- Dusty Gems (沉睡宝藏) -->
+            <!-- Dusty Gems Showcase (沉睡宝藏 · 2行8卡精选 + 专题页入口) -->
             <div id="discover-dusty-section" class="discover-section-card">
               <div class="discover-section-header">
                 <div class="discover-section-title-group">
                   <h2 class="discover-section-title">沉睡宝藏</h2>
-                  <span class="discover-section-subtitle">唤醒你曲库中超过 30 天未听或从未听过的好歌</span>
+                  <span id="discover-dusty-subtitle" class="discover-section-subtitle">唤醒曲库中超过 30 天未听或从未听过的好歌</span>
                 </div>
                 <div class="discover-section-actions">
-                  <button id="discover-dusty-play-all" class="btn btn-secondary btn-sm" disabled>
+                  <button type="button" id="discover-dusty-play-all" class="btn btn-secondary btn-sm" disabled>
                     <span data-icon-slot="shuffle" data-icon-size="14"></span>
-                    <span>均衡随机播</span>
+                    <span>随机唤醒</span>
                   </button>
                   <span class="toolbar-divider" aria-hidden="true"></span>
-                  <button id="discover-dusty-refresh" class="btn btn-ghost btn-sm" title="换一批沉睡宝藏">
+                  <button type="button" id="discover-dusty-prev" class="btn btn-ghost btn-sm" title="回到上一批沉睡宝藏" disabled>
+                    <span class="btn-label">上一批</span>
+                  </button>
+                  <button type="button" id="discover-dusty-refresh" class="btn btn-ghost btn-sm" title="换一批沉睡宝藏">
                     <span data-icon-slot="refresh" data-icon-size="14"></span>
                     <span class="btn-label">换一批</span>
                   </button>
-                  <div class="discover-dusty-stepper-group" role="group" aria-label="浏览沉睡宝藏">
-                    <button type="button" id="discover-dusty-prev" class="discover-dusty-stepper" title="向左滑动" aria-label="向左浏览沉睡宝藏" disabled>
-                      <span class="icon-flip-x" data-icon-slot="chevron-right" data-icon-size="14"></span>
-                    </button>
-                    <button type="button" id="discover-dusty-next" class="discover-dusty-stepper" title="向右滑动" aria-label="向右浏览沉睡宝藏" disabled>
-                      <span data-icon-slot="chevron-right" data-icon-size="14"></span>
-                    </button>
-                  </div>
+                  <button type="button" id="discover-dusty-view-all" class="btn btn-ghost btn-sm" title="进入沉睡宝藏专题页">
+                    <span class="btn-label">查看全部</span>
+                    <span data-icon-slot="arrow-right" data-icon-size="14"></span>
+                  </button>
                 </div>
               </div>
-              <div id="discover-dusty-carousel" class="discover-dusty-carousel" data-can-scroll-left="false" data-can-scroll-right="false">
-                <div id="discover-dusty-grid" class="discover-dusty-strip">
-                  <!-- Populated by discover.js -->
-                </div>
+              <div id="discover-dusty-grid" class="discover-dusty-grid">
+                <!-- Populated by discover.js -->
               </div>
             </div>
 
@@ -307,6 +327,9 @@
 
           </div>
         </section>
+
+        <!-- 1B. DUSTY GEMS EXPLORER (沉睡宝藏专题页 - Populated by dusty_view.js) -->
+        <section id="view-dusty" class="view-panel" role="tabpanel" aria-label="沉睡宝藏"></section>
 
         <!-- 2. CATALOG (音乐库) -->
         <section id="view-catalog" class="view-panel" role="tabpanel" aria-labelledby="tab-catalog">

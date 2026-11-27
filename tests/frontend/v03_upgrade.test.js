@@ -933,20 +933,18 @@ export async function runV03UpgradeTests() {
       api.recordPlayback = origRecordPlay;
     }
 
-    // Regression: discoverManager reads breakdown.multi_seed_similar for 共同相似 pill
-    const mockTagChildren = [];
+    // Regression: discoverManager reads breakdown.multi_seed_similar into blend-bar summary
     const origDocDiscover = globalThis.document;
     try {
+      const blendBarNode = { attributes: {}, dataset: {}, setAttribute(k, v) { this.attributes[k] = v; } };
       globalThis.document = {
-        getElementById: (id) => (id === 'discover-smart-radio-tags' ? {
-          set textContent(_v) { mockTagChildren.length = 0; },
-          appendChild(child) { mockTagChildren.push(child); },
-        } : null),
+        getElementById: (id) => (id === 'discover-radio-blend-bar' ? blendBarNode : null),
         createElement: (tag) => ({ tagName: tag, className: '', textContent: '', setAttribute() {}, appendChild() {} }),
+        querySelectorAll: () => [],
       };
       discoverManager.smartRadioBreakdown = { dusty_gems: 3, fresh_rotation: 1, multi_seed_similar: 4, exploration: 2 };
       discoverManager.renderHeroCards();
-      assert.equal(mockTagChildren.some(n => String(n.textContent).includes('共同相似 4')), true, 'Smart Radio breakdown must display 共同相似 count from multi_seed_similar');
+      assert.equal(String(blendBarNode.dataset.breakdownSummary).includes('共同相似 4'), true, 'Smart Radio breakdown must preserve 共同相似 count from multi_seed_similar');
     } finally {
       globalThis.document = origDocDiscover;
       discoverManager.smartRadioBreakdown = null;
@@ -1338,10 +1336,10 @@ export async function runV03UpgradeTests() {
   assert.equal(indexHtml.includes('>词</button>'), true, 'Player bar must render explicit text-glyph button 词');
   assert.equal(indexHtml.includes('Personal FM'), false, 'Discover header must not include English "Personal FM"');
   assert.equal(indexHtml.includes('id="discover-explore-slider"') && indexHtml.includes('step="1"'), true, 'Smart Radio slider must use continuous step="1"');
-  assert.equal(discoverCssW4.includes('var(--accent) var(--fill)'), true, 'Smart Radio slider track must use var(--accent) and var(--fill)');
-  assert.equal(discoverCssW4.includes('scrollbar-width: none'), true, 'Dusty gems strip must hide native scrollbar cleanly');
-  assert.equal(/\.discover-dusty-strip::-webkit-scrollbar\s*\{\s*display:\s*none;\s*\}/.test(discoverCssW4), true, 'Dusty gems strip must hide webkit scrollbar');
-  assert.equal(indexHtml.includes('id="discover-dusty-prev"') && indexHtml.includes('id="discover-dusty-next"'), true, 'Dusty gems section must provide chevron carousel steppers');
+  assert.equal(discoverCssW4.includes('var(--radio-amber) var(--fill)'), true, 'Smart Radio precision tuner slider track must use var(--radio-amber) and var(--fill)');
+  assert.equal(/\.discover-dusty-grid\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/s.test(discoverCssW4), true, 'Dusty gems showcase must use 4-column 2-row responsive grid');
+  assert.equal(indexHtml.includes('id="discover-dusty-prev"') && indexHtml.includes('id="discover-dusty-refresh"') && indexHtml.includes('id="discover-dusty-view-all"'), true, 'Dusty gems showcase must expose 上一批 / 换一批 / 查看全部 controls');
+  assert.equal(indexHtml.includes('id="view-dusty"') && indexHtml.includes('id="discover-radio-stage"'), true, 'index.html must mount dedicated #view-dusty and Smart Radio vinyl stage');
   assert.equal(discoverManager.computeSliderFillPercent(37), '37%', 'Slider --fill must map 0..100 range accurately for 37%');
   assert.equal(discoverManager.computeSliderFillPercent(0), '0%', 'Slider --fill must map min=0 to 0%');
   assert.equal(discoverManager.computeSliderFillPercent(100), '100%', 'Slider --fill must map max=100 to 100%');

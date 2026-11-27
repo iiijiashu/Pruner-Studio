@@ -394,10 +394,40 @@ class ApiClient {
   }
 
   async getDustyGems(options = {}) {
-    const { limit = 30, excludeIds = [], excludeKeys = [] } = typeof options === 'number' ? {limit: options} : options;
-    const qs = new URLSearchParams({ limit });
-    if (excludeIds.length) qs.set('exclude_ids', excludeIds.join(','));
-    for (const key of excludeKeys) qs.append('exclude_key', key);
+    const opts = typeof options === 'number' ? { limit: options } : (options && typeof options === 'object' ? options : {});
+    const {
+      limit = 30,
+      offset = 0,
+      kind = '',
+      playlist = '',
+      q = '',
+      sort = '',
+      seed = null,
+      excludeIds = [],
+      excludeKeys = [],
+    } = opts;
+    const qs = new URLSearchParams({ limit: String(limit) });
+    const parsedOffset = Number(offset);
+    if (Number.isFinite(parsedOffset) && parsedOffset > 0) {
+      qs.set('offset', String(Math.floor(parsedOffset)));
+    }
+    const cleanKind = String(kind || '').trim();
+    if (cleanKind && cleanKind !== 'all') qs.set('kind', cleanKind);
+    const cleanPlaylist = String(playlist || '').trim();
+    if (cleanPlaylist) qs.set('playlist', cleanPlaylist);
+    const cleanQuery = String(q || '').trim();
+    if (cleanQuery) qs.set('q', cleanQuery);
+    const cleanSort = String(sort || '').trim();
+    if (cleanSort) qs.set('sort', cleanSort);
+    if (seed !== null && seed !== undefined && String(seed).trim() !== '') {
+      qs.set('seed', String(seed));
+    }
+    if (Array.isArray(excludeIds) && excludeIds.length) {
+      qs.set('exclude_ids', excludeIds.join(','));
+    }
+    if (Array.isArray(excludeKeys) && excludeKeys.length) {
+      for (const key of excludeKeys) qs.append('exclude_key', key);
+    }
     return this.request(`/api/recommend/dusty-gems?${qs}`);
   }
 

@@ -2310,15 +2310,32 @@ class PrunerApplication:
 
     def _recommend_dusty_gems(self, query: dict[str, list[str]]) -> ApiResponse:
         limit = _query_int(query, "limit", default=30, minimum=1, maximum=100)
+        offset = _query_int(query, "offset", default=0, minimum=0, maximum=2**31 - 1)
+        seed = _query_optional_int(query, "seed", minimum=-(2**63), maximum=2**63 - 1)
+        kind = _query_str(query, "kind").lower() or "all"
+        playlist = _query_str(query, "playlist")
+        q = _query_str(query, "q")
+        sort = _query_str(query, "sort").lower() or "balanced"
         gen, _, account_id, _ = self._discovery_scope()
         account_id = account_id or self._active_account_id_best_effort()
         dusty_fn = getattr(self.recommend, "dusty_gems", None)
         if not callable(dusty_fn):
             raise AppError("DUSTY_GEMS_UNSUPPORTED", "当前版本不支持沉睡宝藏推荐", 501)
-        ids = {int(i) for i in _query_str(query, "exclude_ids").split(",") if i.isdigit()}
+        ids = {int(i.strip()) for i in _query_str(query, "exclude_ids").split(",") if i.strip().isdigit()}
         raw_keys = query["exclude_key"] if "exclude_key" in query else _query_str(query, "exclude_keys").split(",")
         keys = {key for key in raw_keys if key}
-        result = dusty_fn(account_id, limit=limit, exclude_ids=ids, exclude_keys=keys)
+        result = dusty_fn(
+            account_id,
+            limit=limit,
+            offset=offset,
+            kind=kind,
+            playlist=playlist,
+            q=q,
+            sort=sort,
+            seed=seed,
+            exclude_ids=ids,
+            exclude_keys=keys,
+        )
         self._assert_session_unchanged(gen)
         return success(result)
 
